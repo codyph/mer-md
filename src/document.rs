@@ -1,5 +1,6 @@
 //! Preserve editable Mermaid source while replacing fences with SVG images.
 
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::ops::Range;
 
@@ -16,13 +17,13 @@ const RESERVED: &str = "<!-- portable-mermaid:";
 
 #[derive(Clone, Debug)]
 pub struct Diagram {
-    /// Persistent, filename-safe diagram identity.
+    /// Persistent filename-safe identity.
     pub id: String,
-    /// The source to pass to the renderer, without the Markdown fence.
+    /// Mermaid source without Markdown fences.
     pub source: String,
-    /// Exact original Markdown fence, including its original line endings.
+    /// Original fence, including line endings.
     pub original_fence: String,
-    /// The region owned by this diagram in the current Markdown document.
+    /// Owned region in the Markdown document.
     pub span: Range<usize>,
     pub managed: bool,
 }
@@ -67,6 +68,17 @@ struct SourceComment {
 
 /// Find fences and managed diagrams using a project-relative document key.
 pub fn discover(markdown: &str, document_key: &str) -> Result<Vec<Diagram>> {
+    let content = markdown.strip_prefix('\u{feff}').unwrap_or(markdown);
+    let prefix_length = markdown.len() - content.len();
+    let mut diagrams = discover_content(content, document_key)?;
+    for diagram in &mut diagrams {
+        diagram.span.start += prefix_length;
+        diagram.span.end += prefix_length;
+    }
+    Ok(diagrams)
+}
+
+fn discover_content(markdown: &str, document_key: &str) -> Result<Vec<Diagram>> {
     // Raw `-->` edits must not expose stored fences to the Markdown parser.
     let (masked, sources) = mask_source_comments(markdown)?;
     let (fences, html) = parse_markdown(&masked);
@@ -545,20 +557,28 @@ fn has_closing_fence(original: &str) -> bool {
     let Some(closing) = lines.last() else {
         return false;
     };
-    let closing = closing.trim_start_matches(' ');
+    let indentation = closing.bytes().take_while(|byte| *byte == b' ').count();
+    if indentation > 3 {
+        return false;
+    }
+    let closing = &closing[indentation..];
     let close_width = closing
         .bytes()
         .take_while(|byte| *byte == character)
         .count();
-    close_width >= width && closing[close_width..].bytes().all(|byte| byte == b' ')
+    close_width >= width
+        && closing[close_width..]
+            .bytes()
+            .all(|byte| matches!(byte, b' ' | b'\t'))
 }
 
 fn parse_markdown(markdown: &str) -> (Vec<Fence>, Vec<HtmlSpan>) {
+    let normalized = normalize_closing_fence_tabs(markdown);
     let mut fences = Vec::new();
     let mut html = Vec::new();
     let mut nested = 0_usize;
     let mut pending: Option<Fence> = None;
-    for (event, range) in Parser::new(markdown).into_offset_iter() {
+    for (event, range) in Parser::new(&normalized).into_offset_iter() {
         match event {
             Event::Start(Tag::BlockQuote(_) | Tag::List(_) | Tag::Item) => nested += 1,
             Event::End(TagEnd::BlockQuote(_) | TagEnd::List(_) | TagEnd::Item) => {
@@ -603,6 +623,68 @@ fn parse_markdown(markdown: &str) -> (Vec<Fence>, Vec<HtmlSpan>) {
         }
     }
     (fences, html)
+}
+
+// Normalize closing-fence tabs for parsing without changing source bytes or offsets.
+fn normalize_closing_fence_tabs(markdown: &str) -> Cow<'_, str> {
+    let mut normalized = Cow::Borrowed(markdown);
+    if !markdown.contains('\t') {
+        return normalized;
+    }
+    loop {
+        let mut tabs = Vec::new();
+        for (event, range) in Parser::new(&normalized).into_offset_iter() {
+            if !matches!(
+                event,
+                Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(_)))
+            ) {
+                continue;
+            }
+            let mut lines = normalized[range.clone()].split_inclusive('\n');
+            let Some(opening) = lines.next() else {
+                continue;
+            };
+            let mut offset = range.start + opening.len();
+            let opening = opening.trim_start_matches(' ');
+            let Some(character @ (b'`' | b'~')) = opening.bytes().next() else {
+                continue;
+            };
+            let width = opening
+                .bytes()
+                .take_while(|byte| *byte == character)
+                .count();
+            for line in lines {
+                let text = line.trim_end_matches(['\r', '\n']);
+                let closing = text.trim_start_matches(' ');
+                let close_width = closing
+                    .bytes()
+                    .take_while(|byte| *byte == character)
+                    .count();
+                if text.len() - closing.len() <= 3
+                    && close_width >= width
+                    && closing[close_width..]
+                        .bytes()
+                        .all(|byte| matches!(byte, b' ' | b'\t'))
+                {
+                    tabs.extend(
+                        line.bytes()
+                            .enumerate()
+                            .filter_map(|(index, byte)| (byte == b'\t').then_some(offset + index)),
+                    );
+                    break;
+                }
+                offset += line.len();
+            }
+        }
+        if tabs.is_empty() {
+            return normalized;
+        }
+        let mut bytes = normalized.into_owned().into_bytes();
+        for index in tabs {
+            bytes[index] = b' ';
+        }
+        normalized = Cow::Owned(String::from_utf8(bytes).expect("only ASCII tabs were replaced"));
+    }
 }
 
 fn normalize_fence_span(markdown: &str, range: Range<usize>) -> Range<usize> {

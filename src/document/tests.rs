@@ -175,13 +175,98 @@ fn restore_on_editable_markdown_is_a_noop() {
 
 #[test]
 fn trailing_fence_whitespace_round_trips_without_eating_blank_lines() {
-    let fence = "```mermaid\ngraph LR\nA-->B\n```   \n";
-    let input = format!("{fence}\n\nAfter.\n");
+    for (delimiter, newline) in [("```", "\n"), ("~~~~", "\r\n")] {
+        for whitespace in ["   ", "\t", " \t \t"] {
+            let fence = format!(
+                "{delimiter}mermaid{newline}graph LR{newline}A-->B{newline}{delimiter}{whitespace}{newline}"
+            );
+            let input = format!("{fence}{newline}{newline}After.{newline}");
+            let diagrams = discover(&input, "README.md").unwrap_or_else(|error| {
+                panic!(
+                    "{delimiter:?} {newline:?} {whitespace:?}: {error:#}; {:?}",
+                    parse_markdown(&input)
+                )
+            });
+            assert_eq!(diagrams[0].original_fence, fence);
+            let rendered = render(&input);
+            assert_eq!(rendered, render(&rendered));
+            let restored =
+                restore_document(&rendered, &discover(&rendered, "README.md").unwrap()).unwrap();
+            assert!(restored.ends_with(&input));
+        }
+    }
+}
+
+#[test]
+fn tab_ended_fences_preserve_body_tabs_and_surrounding_code_examples() {
+    let example = "````markdown\n```mermaid\nIgnored example.\n```\t\n````\t\n";
+    let first = "```mermaid\nflowchart LR\nA[\"tab\tlabel\"] --> B\n```\t\n";
+    let second = "~~~~mermaid\nsequenceDiagram\nA->>B: Hello\tthere\n~~~~ \t\n";
+    let input = format!("{example}\nBefore.\n\n{first}\nBetween.\n\n{second}\nAfter.\n");
     let diagrams = discover(&input, "README.md").unwrap();
-    assert_eq!(diagrams[0].original_fence, fence);
+    assert_eq!(diagrams.len(), 2);
+    assert_eq!(diagrams[0].original_fence, first);
+    assert_eq!(diagrams[1].original_fence, second);
+    assert!(diagrams[0].source.contains("tab\tlabel"));
+    assert!(diagrams[1].source.contains("Hello\tthere"));
     let rendered = render(&input);
-    let restored = restore_document(&rendered, &discover(&rendered, "README.md").unwrap()).unwrap();
-    assert!(restored.ends_with(&input));
+    assert!(rendered.starts_with(example));
+    assert_eq!(rendered, render(&rendered));
+    let managed = discover(&rendered, "README.md").unwrap();
+    let mut restored = restore_document(&rendered, &managed).unwrap();
+    for diagram in &managed {
+        restored = restored.replace(&format!("{ID}{} -->\n", diagram.id), "");
+    }
+    assert_eq!(restored, input);
+}
+
+#[test]
+fn utf8_bom_before_first_fence_survives_render_edit_and_restore() {
+    for newline in ["\n", "\r\n"] {
+        for final_newline in ["", newline] {
+            let fence = format!(
+                "```mermaid{newline}flowchart LR{newline}A --> B{newline}```{final_newline}"
+            );
+            let input = format!("\u{feff}{fence}");
+            let diagrams = discover(&input, "README.md").unwrap();
+            assert_eq!(diagrams.len(), 1);
+            assert_eq!(diagrams[0].span.start, '\u{feff}'.len_utf8());
+            assert_eq!(diagrams[0].original_fence, fence);
+            let id = &diagrams[0].id;
+            let rendered = render(&input);
+            assert!(rendered.starts_with(&format!("\u{feff}{BEGIN}{id} -->")));
+            assert_eq!(rendered, render(&rendered));
+
+            let edited = rendered.replace("A --&gt; B", "A --> C");
+            let managed = discover(&edited, "README.md").unwrap();
+            assert_eq!(managed.len(), 1);
+            assert_eq!(&managed[0].id, id);
+            assert!(managed[0].source.contains("A --> C"));
+            let updated = render(&edited);
+            assert_eq!(updated, render(&updated));
+            let restored =
+                restore_document(&updated, &discover(&updated, "README.md").unwrap()).unwrap();
+            let identity = format!("{ID}{id} -->{newline}");
+            assert_eq!(
+                restored.replacen(&identity, "", 1),
+                input.replace("A --> B", "A --> C")
+            );
+        }
+    }
+}
+
+#[test]
+fn utf8_bom_and_heading_are_preserved_around_diagrams() {
+    let input = "\u{feff}# Heading\n\n```mermaid\nflowchart LR\nA --> B\n```\n\nAfter.\n";
+    let rendered = render(input);
+    assert!(rendered.starts_with("\u{feff}# Heading\n\n"));
+    assert!(rendered.ends_with("\n\nAfter.\n"));
+    let diagrams = discover(&rendered, "README.md").unwrap();
+    let restored = restore_document(&rendered, &diagrams).unwrap();
+    let identity = format!("{ID}{} -->\n", diagrams[0].id);
+    assert_eq!(restored.replacen(&identity, "", 1), input);
+    let plain = "\u{feff}# Heading\n";
+    assert_eq!(render(plain), plain);
 }
 
 #[test]
@@ -211,7 +296,10 @@ fn inserting_new_fence_at_original_offset_does_not_reuse_persistent_id() {
 
 #[test]
 fn unterminated_mermaid_fence_is_refused_instead_of_consuming_later_prose() {
-    assert!(discover("```mermaid\ngraph LR\nA-->B\n\nLater prose.\n", "README.md").is_err());
+    for ending in ["\nLater prose.\n", "    ```\n", "    ```\t\n"] {
+        let input = format!("```mermaid\ngraph LR\nA-->B\n{ending}");
+        assert!(discover(&input, "README.md").is_err(), "{ending:?}");
+    }
 }
 
 #[test]
