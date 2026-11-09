@@ -1,6 +1,6 @@
 [package]
 name = "mer-md"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 rust-version = "1.95"
 description = "Turn Markdown Mermaid diagrams into shareable SVGs, offline."
