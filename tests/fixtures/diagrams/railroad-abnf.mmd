@@ -1,0 +1,5 @@
+railroad-abnf-beta
+    application = "submit" SP reference [ SP "urgent" ] ;
+    reference = 1*6DIGIT ;
+    SP = %x20 ;
+    DIGIT = %x30-39 ;

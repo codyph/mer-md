@@ -1,0 +1,5 @@
+graph LR
+    draft[Draft] -->|Submit for review| review{Accepted?}
+    review -->|Revise and resubmit| draft
+    review -->|Approved| published[Published]
+    published --> archive[Archive]

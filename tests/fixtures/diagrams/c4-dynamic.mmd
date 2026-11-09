@@ -1,0 +1,8 @@
+C4Dynamic
+    Person(applicant, "Applicant")
+    Container(portal, "WebPortal", "HTTP")
+    Container(api, "ReviewAPI", "Rust")
+    ContainerDb(records, "RecordStore", "SQL")
+    RelIndex(1, applicant, portal, "Submits application")
+    RelIndex(2, portal, api, "Validates details")
+    RelIndex(3, api, records, "Writes decision")

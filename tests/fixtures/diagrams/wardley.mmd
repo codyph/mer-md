@@ -1,0 +1,13 @@
+wardley-beta
+    title Application service map
+    size [900, 650]
+    anchor Applicant [0.95, 0.5]
+    component Service Portal [0.8, 0.45]
+    component Review Rules [0.58, 0.3]
+    component Decision Store [0.4, 0.75]
+    component Hosting [0.2, 0.9]
+    Applicant -> Service Portal
+    Service Portal -> Review Rules
+    Service Portal -> Decision Store
+    Decision Store -> Hosting
+    evolve Review Rules 0.6

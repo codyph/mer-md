@@ -1,0 +1,4 @@
+railroad-beta
+    title "Application grammar"
+    application = sequence(terminal("submit"), nonterminal("reference"), optional(terminal("urgent"))) ;
+    reference = oneOrMore(terminal("digit")) ;

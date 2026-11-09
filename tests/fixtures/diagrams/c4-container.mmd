@@ -1,0 +1,10 @@
+C4Container
+    Person(applicant, "Applicant")
+    System_Boundary(service, "Application service") {
+        Container(web, "WebPortal", "HTTP", "Collects applications")
+        Container(api, "ReviewAPI", "Rust", "Validates requests")
+        ContainerDb(store, "RecordStore", "SQL", "Stores decisions")
+    }
+    Rel(applicant, web, "Submits application")
+    Rel(web, api, "Requests validation")
+    Rel(api, store, "Writes decisions")

@@ -1,0 +1,9 @@
+architecture-beta
+    group app(cloud)[Application Service]
+    service web(server)[Web Portal] in app
+    service api(server)[Review API] in app
+    service database(database)[Decision Store] in app
+    service mail(internet)[Mail Gateway]
+    web:R --> L:api
+    api:B --> T:database
+    api:R --> L:mail

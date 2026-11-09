@@ -1,0 +1,19 @@
+classDiagram
+    class Application {
+        +String reference
+        +submit()
+    }
+    class Review {
+        +String decision
+        +approve()
+    }
+    class Applicant {
+        +String name
+    }
+    class AuditEntry {
+        +String message
+    }
+    Applicant "1" --> "many" Application : submits
+    Application "1" *-- "many" Review : records
+    Review --> AuditEntry : creates audit entry
+    Application --> AuditEntry : preserves history

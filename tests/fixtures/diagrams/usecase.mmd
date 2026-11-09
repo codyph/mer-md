@@ -1,0 +1,12 @@
+usecase-beta
+    direction LR
+    actor Applicant
+    actor Reviewer
+    systemBoundary "Application service"
+        Submit("Submit application")
+        Assess("Assess application")
+        Track("Track progress")
+    end
+    Applicant --> Submit
+    Applicant --> Track
+    Reviewer --> Assess

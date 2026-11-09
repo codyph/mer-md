@@ -1,0 +1,8 @@
+C4Component
+    Container_Boundary(api, "Review service") {
+        Component(endpoint, "SubmissionEndpoint", "HTTP", "Accepts requests")
+        Component(validator, "DetailValidator", "Rust", "Checks required fields")
+        Component(repository, "DecisionRepository", "SQL", "Preserves decisions")
+    }
+    Rel(endpoint, validator, "Validates submission")
+    Rel(validator, repository, "Records result")

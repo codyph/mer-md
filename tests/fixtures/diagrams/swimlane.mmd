@@ -1,0 +1,17 @@
+swimlane-beta LR
+    subgraph Applicant
+        submit[Submit application]
+        revise[Revise details]
+    end
+    subgraph Reviewer
+        assess{Ready to approve?}
+        approve[Approve application]
+    end
+    subgraph Operations
+        deliver[Deliver service]
+    end
+    submit -->|Application received| assess
+    assess -->|Missing information| revise
+    revise -->|Updated application| assess
+    assess -->|All checks complete| approve
+    approve --> deliver

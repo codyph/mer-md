@@ -1,0 +1,14 @@
+sequenceDiagram
+    actor Applicant
+    participant Portal
+    participant Records
+    Applicant->>Portal: Submit application
+    Portal->>Records: Validate details
+    alt Complete application
+        Records-->>Portal: Validation passed
+        Portal-->>Applicant: Confirmation number
+    else Missing details
+        Records-->>Portal: Required fields
+        Portal-->>Applicant: Request clarification
+    end
+    Note over Portal,Records: Retain an audit trail

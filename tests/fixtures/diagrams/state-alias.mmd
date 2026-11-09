@@ -1,0 +1,6 @@
+stateDiagram
+    [*] --> Waiting
+    Waiting --> Processing: Receive request
+    Processing --> Waiting: Retry later
+    Processing --> Completed: Save result
+    Completed --> [*]

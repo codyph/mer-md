@@ -1,0 +1,13 @@
+agentflow-beta TB
+    request[Application]@{ shape: input }
+    validate[Validate details]@{ shape: tool }
+    assess[Ready for review?]@{ shape: decision }
+    decide[Record decision]@{ shape: action }
+    clarify[Request clarification]@{ shape: task }
+    guidance[Review guide]@{ shape: refdoc }
+    request --> validate
+    validate --> assess
+    assess -- Ready --> decide
+    assess -- Missing data --> clarify
+    clarify --x request
+    validate -.- guidance

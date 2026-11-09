@@ -1,0 +1,9 @@
+flowchart TD
+    request[Receive request] --> validate{Complete details?}
+    validate -->|Yes, continue processing| approve[Approve request]
+    validate -->|No, request clarification| clarify[Ask for details]
+    clarify -->|Updated request| request
+    approve --> record[Record decision]
+    record --> notify[Notify applicant]
+    approve -.->|Audit copy| audit[(Audit log)]
+    notify --> done([Complete])

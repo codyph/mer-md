@@ -1,0 +1,7 @@
+eventmodeling
+    tf 01 ui Applications.SubmissionForm
+    tf 02 cmd Review.SubmitApplication ->> 01 { reference: "APP-101" }
+    tf 03 evt Applications.ApplicationSubmitted ->> 02
+    rf 04 rmo Review.PendingApplications
+    tf 05 cmd Review.ApproveApplication
+    tf 06 evt Applications.ApplicationApproved ->> 05

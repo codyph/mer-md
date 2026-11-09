@@ -1,0 +1,6 @@
+C4Context
+    Person(applicant, "Applicant", "Requests a service")
+    System(portal, "ServicePortal", "Processes applications")
+    System_Ext(mail, "MailService", "Delivers notifications")
+    Rel(applicant, portal, "Submits applications")
+    Rel(portal, mail, "Sends decisions")

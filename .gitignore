@@ -1,0 +1,7 @@
+/target/
+/.tools/
+/artifacts/
+/THIRD_PARTY_LICENSES.txt
+.DS_Store
+Thumbs.db
+__pycache__/

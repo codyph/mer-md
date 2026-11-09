@@ -1,0 +1,11 @@
+gantt
+    title Service delivery plan
+    dateFormat YYYY-MM-DD
+    todayMarker off
+    section Preparation
+        Gather requirements :done, requirements, 2026-01-05, 4d
+        Review design :active, design, after requirements, 3d
+    section Delivery
+        Implement service :implementation, after design, 7d
+        Verify results :verification, after implementation, 3d
+        Release :milestone, after verification, 0d

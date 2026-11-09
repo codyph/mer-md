@@ -1,0 +1,11 @@
+---
+config:
+    layout: elk
+---
+flowchart LR
+    request[Receive request] --> rules[Check rules]
+    request --> documents[Check documents]
+    rules --> decision{Approved?}
+    documents --> decision
+    decision -->|Approved for delivery| deliver[Deliver service]
+    decision -->|Return with explanation| request

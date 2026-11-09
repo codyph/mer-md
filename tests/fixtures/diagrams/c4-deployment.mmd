@@ -1,0 +1,10 @@
+C4Deployment
+    Deployment_Node(client, "ApplicantDevice", "Desktop") {
+        Container(browser, "Browser", "Web")
+    }
+    Deployment_Node(server, "ServiceHost", "Linux") {
+        Container(api, "ReviewAPI", "Rust")
+        ContainerDb(records, "RecordStore", "SQL")
+    }
+    Rel(browser, api, "Submits application", "HTTPS")
+    Rel(api, records, "Stores decisions", "SQL")

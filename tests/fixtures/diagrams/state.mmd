@@ -1,0 +1,9 @@
+stateDiagram-v2
+    [*] --> Draft
+    Draft --> Review: Submit for approval
+    Review --> Draft: Request more details
+    Review --> Approved: All checks passed
+    Review --> Rejected: Checks failed
+    Approved --> Approved: Record audit note
+    Approved --> [*]: Deliver service
+    Rejected --> [*]: Notify applicant

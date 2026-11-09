@@ -1,0 +1,21 @@
+erDiagram
+    APPLICANT ||--o{ APPLICATION : submits
+    APPLICATION ||--o{ REVIEW : receives
+    APPLICATION ||--o{ AUDIT_ENTRY : records
+    APPLICANT {
+        string id PK
+        string name
+    }
+    APPLICATION {
+        string reference PK
+        string applicant_id FK
+        string status
+    }
+    REVIEW {
+        string decision
+        string reviewer
+    }
+    AUDIT_ENTRY {
+        string message
+        string timestamp
+    }

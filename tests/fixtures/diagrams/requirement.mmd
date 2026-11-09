@@ -1,0 +1,20 @@
+requirementDiagram
+    requirement traceability {
+        id: REQ1
+        text: Every decision is recorded
+        risk: high
+        verifymethod: test
+    }
+    functionalRequirement notification {
+        id: REQ2
+        text: Applicant receives a decision
+        risk: medium
+        verifymethod: demonstration
+    }
+    element service {
+        type: software
+        docref: Service specification
+    }
+    service - satisfies -> traceability
+    service - satisfies -> notification
+    notification - traces -> traceability

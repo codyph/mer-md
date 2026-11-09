@@ -1,0 +1,125 @@
+name: Build portable releases
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - "**"
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary: mer-md.exe
+          - platform: linux-x86_64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            binary: mer-md
+          - platform: macos-aarch64
+            os: macos-15
+            target: aarch64-apple-darwin
+            binary: mer-md
+          - platform: macos-x86_64
+            os: macos-15-intel
+            target: x86_64-apple-darwin
+            binary: mer-md
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install Linux build tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes musl-tools
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }} --component rustfmt --component clippy
+
+      - name: Check formatting
+        run: cargo +stable fmt --all -- --check
+
+      - name: Lint
+        run: cargo +stable clippy --locked --all-targets --target ${{ matrix.target }} -- -D warnings
+
+      - name: Run tests
+        run: cargo +stable test --locked --target ${{ matrix.target }}
+
+      - name: Build executable
+        run: cargo +stable build --release --locked --target ${{ matrix.target }}
+
+      - name: Test Linux distributions
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          for image in ubuntu:20.04 ubuntu:22.04 ubuntu:24.04 alpine:3.22; do
+            docker run --rm \
+              -v "$PWD/target/${{ matrix.target }}/release/mer-md:/usr/local/bin/mer-md:ro" \
+              -v "$PWD/tests/fixtures/project:/input:ro" \
+              "$image" sh -c '
+                cp -R /input /tmp/project &&
+                mer-md /tmp/project &&
+                mer-md /tmp/project &&
+                mer-md /tmp/project --restore &&
+                grep -q "flowchart" /tmp/project/README.md
+              '
+          done
+
+      - name: Render demo
+        shell: bash
+        run: '"target/${{ matrix.target }}/release/${{ matrix.binary }}" demo'
+
+      - name: Package release
+        run: python scripts/package.py --target ${{ matrix.target }}
+
+      - name: Upload portable archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: mer-md-${{ matrix.platform }}
+          path: artifacts/*
+          if-no-files-found: error
+
+  release:
+    name: Publish tagged release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download portable archives
+        uses: actions/download-artifact@v8
+        with:
+          pattern: mer-md-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" artifacts/* --clobber
+          else
+            gh release create "$RELEASE_TAG" artifacts/* --verify-tag --title "$RELEASE_TAG" --generate-notes
+          fi
