@@ -9,10 +9,10 @@ mod theme;
 
 use anyhow::{Context, Result, bail};
 
-/// Version layout and paint behaviour so existing assets refresh in place.
-pub const RENDERER_VERSION: &str = "merman/0.9.3;native-layout/4;auto-palette/3;svg-sizing/1";
+/// Cache identity for rendering behaviour.
+pub const RENDERER_VERSION: &str = "merman/0.9.3;native-layout/4;auto-palette/4;svg-sizing/1";
 
-/// Render one self-contained SVG that follows the browser colour scheme.
+/// Render an SVG that follows the browser colour scheme.
 pub fn render(source: &str) -> Result<String> {
     if !crate::render::graph::supports(source) {
         bail!("unrecognized or unsupported Mermaid diagram type");
@@ -30,10 +30,7 @@ pub fn render(source: &str) -> Result<String> {
     Ok(svg)
 }
 
-/// A viewer's substitute font can exceed the native treemap's measurements.
-/// Give leaf labels an explicit advance length matching those measurements,
-/// bounded by the cell's clip rectangle. SVG then fits the complete text rather
-/// than cutting off the final glyphs, without changing the data rectangles.
+/// Fit substituted fonts within treemap cells without changing data geometry.
 fn fit_treemap_labels(svg: &str) -> Result<String> {
     use merman::svg::{DeterministicTextMeasurer, TextMeasurer, TextStyle};
     let document = roxmltree::Document::parse(svg)?;

@@ -1,7 +1,4 @@
-//! Matched diagram palettes for transparent light and dark page surfaces.
-//!
-//! Background-free labels rely on the page's colour scheme. Shape fills stay
-//! opaque so connectors cannot show through nodes, and colours remain stable.
+//! Light and dark palettes with opaque shapes and transparent label backgrounds.
 
 #[derive(Debug, Clone)]
 pub struct Theme {
@@ -118,8 +115,7 @@ pub fn dark_theme() -> Theme {
     }
 }
 
-/// Colour roles used by the full native renderer, including charts and boards.
-/// Keep all font sizes and stroke widths identical between the two palettes.
+/// Native colour roles; both palettes retain identical font and stroke metrics.
 pub fn native_variables(theme: &Theme) -> serde_json::Map<String, serde_json::Value> {
     use serde_json::{Value, json};
     let mut variables = json!({
@@ -272,30 +268,79 @@ pub fn native_variables(theme: &Theme) -> serde_json::Map<String, serde_json::Va
     variables
 }
 
+/// Choose readable text for an opaque source fill.
+pub fn contrasting_text(fill: &str) -> Option<&'static str> {
+    let fill = fill.trim();
+    let fill = if fill.to_ascii_lowercase().ends_with("!important") {
+        fill[..fill.len() - "!important".len()].trim_end()
+    } else {
+        fill
+    };
+    let fill = fill.parse::<svgtypes::Color>().ok()?;
+    if fill.alpha != 255 {
+        return None;
+    }
+    let background = luminance(fill);
+    let candidates = ["#263347", "#E7EDF7", "#000000", "#FFFFFF"];
+    candidates.into_iter().find(|colour| {
+        contrast(
+            luminance(colour.parse().expect("valid palette colour")),
+            background,
+        ) >= 4.5
+    })
+}
+
+fn luminance(colour: svgtypes::Color) -> f64 {
+    let channel = |value: u8| {
+        let value = f64::from(value) / 255.0;
+        if value <= 0.04045 {
+            value / 12.92
+        } else {
+            ((value + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * channel(colour.red) + 0.7152 * channel(colour.green) + 0.0722 * channel(colour.blue)
+}
+
+fn contrast(a: f64, b: f64) -> f64 {
+    (a.max(b) + 0.05) / (a.min(b) + 0.05)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn luminance(hex: &str) -> f64 {
-        let channel = |start| {
-            let value = u8::from_str_radix(&hex[start..start + 2], 16).unwrap() as f64 / 255.0;
-            if value <= 0.04045 {
-                value / 12.92
-            } else {
-                ((value + 0.055) / 1.055).powf(2.4)
-            }
-        };
-        0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5)
-    }
-
     fn assert_contrast(foreground: &str, background: &str, minimum: f64) {
-        let a = luminance(foreground);
-        let b = luminance(background);
-        let ratio = (a.max(b) + 0.05) / (a.min(b) + 0.05);
+        let a = luminance(foreground.parse().unwrap());
+        let b = luminance(background.parse().unwrap());
+        let ratio = contrast(a, b);
         assert!(
             ratio >= minimum,
             "{foreground} on {background}: contrast {ratio:.2}:1 is below {minimum}:1"
         );
+    }
+
+    #[test]
+    fn fixed_fills_receive_contrasting_text_without_guessing_transparency() {
+        for red in [0, 51, 102, 153, 204, 255] {
+            for green in [0, 51, 102, 153, 204, 255] {
+                for blue in [0, 51, 102, 153, 204, 255] {
+                    let fill = format!("#{red:02x}{green:02x}{blue:02x}");
+                    assert_contrast(contrasting_text(&fill).unwrap(), &fill, 4.5);
+                }
+            }
+        }
+        assert_eq!(contrasting_text("white !important"), Some("#263347"));
+        assert_eq!(contrasting_text("rgb(0,0,0)"), Some("#E7EDF7"));
+        for fill in [
+            "transparent",
+            "rgba(255,255,255,0.5)",
+            "url(#gradient)",
+            "currentColor",
+            "none",
+        ] {
+            assert_eq!(contrasting_text(fill), None);
+        }
     }
 
     #[test]

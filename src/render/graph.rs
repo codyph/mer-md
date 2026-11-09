@@ -107,10 +107,9 @@ pub fn render(source: &str, theme: &Theme) -> Result<String> {
         "themeVariables": variables
     });
     if family == Some("usecase") {
-        // Use measured HTML placement to correct native usecase text offsets.
-        // The export pipeline converts the labels back to SVG text.
+        // Measure usecase HTML labels before converting them to SVG text.
         config_value["htmlLabels"] = json!(true);
-        // Unquoted font names avoid the converter's quoted-list tokenizer bug.
+        // The converter requires unquoted font names.
         let family = theme.font_family.replace(['"', '\''], "");
         config_value["fontFamily"] = json!(family);
         config_value["themeVariables"]["fontFamily"] = json!(family);
@@ -264,13 +263,50 @@ fn normalize_svg(svg: &str) -> Result<String> {
             .map(|range| (range, String::new())),
     );
 
-    // Mirror authored label colours onto SVG text; renderer CSS overrides
-    // inherited group fills.
+    let fixed_node_colours: HashMap<_, _> = root
+        .descendants()
+        .filter(|node| has_class(*node, "node"))
+        .filter_map(|node| {
+            node.children()
+                .filter(|shape| {
+                    shape.is_element()
+                        && matches!(
+                            shape.tag_name().name(),
+                            "rect" | "circle" | "ellipse" | "polygon" | "path"
+                        )
+                })
+                .find_map(|shape| {
+                    let style = shape.attribute("style")?;
+                    if ["opacity", "fill-opacity"].into_iter().any(|property| {
+                        inline_property(style, property)
+                            .or_else(|| shape.attribute(property))
+                            .is_some_and(|value| {
+                                value
+                                    .split('!')
+                                    .next()
+                                    .unwrap_or(value)
+                                    .trim()
+                                    .parse::<f64>()
+                                    .ok()
+                                    != Some(1.0)
+                            })
+                    }) {
+                        return None;
+                    }
+                    let fill = inline_property(style, "fill")?;
+                    crate::render::palette::contrasting_text(fill).map(|colour| (node.id(), colour))
+                })
+        })
+        .collect();
+
+    // Honour authored text colours; fixed node fills need readable defaults.
     for text in root
         .descendants()
         .filter(|node| node.has_tag_name("text") || node.has_tag_name("tspan"))
     {
-        let Some(color) = authored_label_color(text) else {
+        let Some(color) = authored_label_color(text)
+            .or_else(|| fixed_node_label_colour(text, &fixed_node_colours))
+        else {
             continue;
         };
         if let Some(style) = text.attribute_node("style") {
@@ -960,6 +996,31 @@ fn authored_label_color<'a>(node: Node<'a, '_>) -> Option<&'a str> {
         }
     }
     None
+}
+
+fn fixed_node_label_colour(
+    node: Node<'_, '_>,
+    colours: &HashMap<roxmltree::NodeId, &'static str>,
+) -> Option<&'static str> {
+    let mut label = false;
+    for ancestor in node.ancestors().filter(Node::is_element) {
+        let style = ancestor.attribute("style").unwrap_or("");
+        if ancestor.attribute("fill").is_some()
+            || inline_property(style, "fill").is_some()
+            || inline_property(style, "color").is_some()
+        {
+            return None;
+        }
+        if has_class(ancestor, "label") {
+            label = true;
+            break;
+        }
+    }
+    if !label {
+        return None;
+    }
+    let owner = node.ancestors().find(|parent| has_class(*parent, "node"))?;
+    colours.get(&owner.id()).copied()
 }
 
 fn inline_property<'a>(style: &'a str, property: &str) -> Option<&'a str> {

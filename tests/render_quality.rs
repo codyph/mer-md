@@ -389,6 +389,33 @@ fn transparent_diagram_contains_both_automatic_colour_palettes() {
 }
 
 #[test]
+fn fixed_node_fills_have_readable_labels_in_the_adaptive_svg() {
+    let directory = fixture(
+        "```mermaid\nflowchart LR\nA[Light] --> B[Dark]\nB --> C[Explicit]\nC --> D[Default]\nstyle A fill:#ffffff\nstyle B fill:#000000\nstyle C fill:#ffffff,color:#123456\n```\n",
+    );
+    let svg = render(directory.path());
+    let document = Document::parse(&svg).unwrap();
+    for (label, colour) in [
+        ("Light", "#263347"),
+        ("Dark", "#E7EDF7"),
+        ("Explicit", "#123456"),
+    ] {
+        let label = document
+            .descendants()
+            .find(|node| node.has_tag_name("text") && text(*node) == label)
+            .unwrap();
+        assert!(label.attribute("style").unwrap().contains(colour));
+    }
+    let default = document
+        .descendants()
+        .find(|node| node.has_tag_name("text") && text(*node) == "Default")
+        .unwrap();
+    assert!(default.attribute("style").is_none());
+    assert!(svg.contains("#EEE9FF") && svg.contains("#363052"));
+    assert_transparent_canvas_and_labels(&svg);
+}
+
+#[test]
 fn explicit_node_colours_survive_automatic_theme_adaptation() {
     let directory = fixture(
         "```mermaid\nflowchart LR\nA[Custom] --> B[Default]\nstyle A fill:#FF5733,stroke:#1565C0,color:#FAFAFA\n```\n",

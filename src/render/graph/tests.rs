@@ -120,6 +120,86 @@ fn explicit_node_paint_survives_svg_normalization() {
 }
 
 #[test]
+fn fixed_fill_labels_are_readable_while_default_and_edge_labels_follow_the_theme() {
+    let source = "flowchart LR\nA[Light] -->|Transition| B[Dark]\nB --> C[Default]\nstyle A fill:#ffffff,opacity:1\nclassDef dark fill:#000000\nclass B dark";
+    for theme in [
+        crate::render::palette::light_theme(),
+        crate::render::palette::dark_theme(),
+    ] {
+        let svg = render(source, &theme).unwrap();
+        let document = Document::parse(&svg).unwrap();
+        for (label, colour) in [("Light", "#263347"), ("Dark", "#E7EDF7")] {
+            let text = document
+                .descendants()
+                .find(|node| {
+                    node.has_tag_name("text")
+                        && node
+                            .descendants()
+                            .filter(Node::is_text)
+                            .any(|content| content.text() == Some(label))
+                })
+                .unwrap();
+            assert_eq!(
+                inline_property(text.attribute("style").unwrap(), "fill"),
+                Some(colour)
+            );
+            assert!(
+                text.descendants()
+                    .filter(|node| node.has_tag_name("tspan"))
+                    .all(|node| {
+                        inline_property(node.attribute("style").unwrap(), "fill") == Some(colour)
+                    })
+            );
+        }
+        for label in ["Default", "Transition"] {
+            let text = document
+                .descendants()
+                .find(|node| {
+                    node.has_tag_name("text")
+                        && node
+                            .descendants()
+                            .filter(Node::is_text)
+                            .any(|content| content.text() == Some(label))
+                })
+                .unwrap();
+            assert!(text.descendants().filter(Node::is_element).all(|node| {
+                inline_property(node.attribute("style").unwrap_or(""), "fill").is_none()
+            }));
+        }
+        assert!(svg.contains("fill:#ffffff"));
+        assert!(svg.contains("fill:#000000"));
+    }
+}
+
+#[test]
+fn fixed_state_fill_gets_readable_text_without_overriding_explicit_colour() {
+    let source = "stateDiagram-v2\n[*] --> Light\nLight --> Custom\nclassDef light fill:#ffffff\nclassDef custom fill:#ffffff,color:#ff0000\nclass Light light\nclass Custom custom";
+    for theme in [
+        crate::render::palette::light_theme(),
+        crate::render::palette::dark_theme(),
+    ] {
+        let svg = render(source, &theme).unwrap();
+        let document = Document::parse(&svg).unwrap();
+        for (label, colour) in [("Light", "#263347"), ("Custom", "#ff0000 !important")] {
+            let text = document
+                .descendants()
+                .find(|node| {
+                    node.has_tag_name("text")
+                        && node
+                            .descendants()
+                            .filter(Node::is_text)
+                            .any(|content| content.text() == Some(label))
+                })
+                .unwrap();
+            assert_eq!(
+                inline_property(text.attribute("style").unwrap(), "fill"),
+                Some(colour)
+            );
+        }
+    }
+}
+
+#[test]
 fn authored_label_colors_are_visible_svg_text_fills() {
     let source = "flowchart LR\nA[Custom success] --> B[Custom warning]\nclassDef success fill:#d1fae5,stroke:#047857,color:#064e3b\nclass A success\nstyle B fill:#fef3c7,stroke:#b45309,color:#78350f";
     let svg = render(source, &crate::render::palette::dark_theme()).unwrap();
@@ -153,7 +233,7 @@ fn authored_label_colors_are_visible_svg_text_fills() {
 
 #[test]
 fn authored_fill_is_preserved_over_inherited_label_color() {
-    let source = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><g class="label" style="color:#ff0000!important"><text style="fill:#0000ff!important"><tspan>Blue text</tspan></text></g></svg>"##;
+    let source = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><g class="node"><rect style="fill:#ffffff"/><g class="label" style="color:#ff0000!important"><text style="fill:#0000ff!important"><tspan>Blue text</tspan></text></g></g></svg>"##;
     let svg = normalize_svg(source).unwrap();
     let doc = Document::parse(&svg).unwrap();
     let text = doc
