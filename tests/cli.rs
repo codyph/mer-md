@@ -69,6 +69,86 @@ fn svg_has_text(svg: &str, expected: &str) -> bool {
     })
 }
 
+fn identified_source(id: &str, label: &str) -> String {
+    format!(
+        "<!-- portable-mermaid:id {id} -->\n{}",
+        FENCE.replace("Original", label)
+    )
+}
+
+#[test]
+fn case_different_ids_are_rejected_before_writing_a_batch() {
+    for separate_files in [false, true] {
+        let temp = fixture();
+        let root = temp.path();
+        let first = identified_source("diagram", "First");
+        let second = identified_source("DIAGRAM", "Second");
+        let original = if separate_files {
+            write(root, "other.markdown", &second);
+            first
+        } else {
+            format!("{first}\n{second}")
+        };
+        write(root, "README.md", &original);
+
+        let output = run(root, &["."]);
+        assert_exit(&output, 2);
+        assert!(String::from_utf8_lossy(&output.stderr).contains("diagram ID"));
+        assert_eq!(read(root, "README.md"), original);
+        if separate_files {
+            assert_eq!(read(root, "other.markdown"), second);
+        }
+        assert!(!root.join("docs").exists());
+    }
+}
+
+#[test]
+fn case_different_ids_do_not_alias_an_existing_svg() {
+    let temp = fixture();
+    let root = temp.path();
+    write(root, "README.md", &identified_source("Diagram", "First"));
+    assert_exit(&run(root, &["README.md"]), 0);
+    let original_markdown = read(root, "README.md");
+    let paths = svg_paths(root);
+    assert_eq!(paths.len(), 1);
+    assert_eq!(paths[0].file_name().unwrap(), "Diagram.svg");
+    let original_svg = fs::read(&paths[0]).unwrap();
+
+    let second = identified_source("diagram", "Second");
+    write(root, "other.markdown", &second);
+    let output = run(root, &["other.markdown"]);
+    assert_exit(&output, 2);
+    assert!(String::from_utf8_lossy(&output.stderr).contains("conflicts"));
+    assert_eq!(read(root, "README.md"), original_markdown);
+    assert_eq!(read(root, "other.markdown"), second);
+    assert_eq!(svg_paths(root), paths);
+    assert_eq!(fs::read(&paths[0]).unwrap(), original_svg);
+    assert_exit(&run(root, &["README.md"]), 0);
+    assert_eq!(fs::read(&paths[0]).unwrap(), original_svg);
+}
+
+#[test]
+fn svg_ownership_checks_ids_without_filename_case_ambiguity() {
+    let temp = fixture();
+    let root = temp.path();
+    write(root, "README.md", &identified_source("diagram", "First"));
+    assert_exit(&run(root, &["README.md"]), 0);
+    let paths = svg_paths(root);
+    let original_svg = fs::read(&paths[0]).unwrap();
+    let original = read(root, "README.md").replace("id=diagram", "id=DIAGRAM");
+    write(root, "README.md", &original);
+    let second = identified_source("diagram", "Second");
+    write(root, "other.markdown", &second);
+
+    let output = run(root, &["other.markdown"]);
+    assert_exit(&output, 2);
+    assert!(String::from_utf8_lossy(&output.stderr).contains("still belongs"));
+    assert_eq!(read(root, "README.md"), original);
+    assert_eq!(read(root, "other.markdown"), second);
+    assert_eq!(svg_paths(root), paths);
+    assert_eq!(fs::read(&paths[0]).unwrap(), original_svg);
+}
+
 #[test]
 fn single_file_render_is_idempotent_and_restore_edit_reuses_the_svg() {
     let temp = fixture();

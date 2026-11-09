@@ -16,7 +16,44 @@ struct Change {
     original: Option<Vec<u8>>,
 }
 
+struct Plan {
+    inputs: Vec<(PathBuf, Vec<u8>)>,
+    svg_changes: Vec<Change>,
+    markdown_changes: Vec<Change>,
+    diagram_count: usize,
+    cached_count: usize,
+}
+
+impl Plan {
+    fn apply(&self) -> Result<()> {
+        for (path, bytes) in &self.inputs {
+            verify_unchanged(path, Some(bytes))?;
+        }
+        for change in self.svg_changes.iter().chain(&self.markdown_changes) {
+            verify_unchanged(&change.path, change.original.as_deref())?;
+        }
+        // Write images first so every new Markdown reference has its SVG.
+        for change in self.svg_changes.iter().chain(&self.markdown_changes) {
+            atomic_write(&change.path, &change.bytes)?;
+        }
+        Ok(())
+    }
+}
+
 pub(crate) fn execute(options: &Options) -> Result<()> {
+    let plan = plan(options)?;
+    plan.apply()?;
+    println!(
+        "Updated {} Markdown file(s), {} SVG(s); {} diagram(s), {} cached.",
+        plan.markdown_changes.len(),
+        plan.svg_changes.len(),
+        plan.diagram_count,
+        plan.cached_count
+    );
+    Ok(())
+}
+
+fn plan(options: &Options) -> Result<Plan> {
     let selected = fs::symlink_metadata(&options.path)
         .with_context(|| format!("cannot read {}", options.path.display()))?;
     if selected.file_type().is_symlink() {
@@ -34,6 +71,12 @@ pub(crate) fn execute(options: &Options) -> Result<()> {
     if !options.restore {
         check_output_directory(&root, &output_dir)?;
     }
+    let existing_names = if options.restore {
+        HashMap::new()
+    } else {
+        svg_filenames(&output_dir)?
+    };
+    let mut inputs = Vec::with_capacity(files.len());
     let mut svg_changes = Vec::new();
     let mut markdown_changes = Vec::new();
     let mut seen_ids: HashMap<String, PathBuf> = HashMap::new();
@@ -61,7 +104,9 @@ pub(crate) fn execute(options: &Options) -> Result<()> {
         } else {
             let mut links = Vec::with_capacity(diagrams.len());
             for diagram in &diagrams {
-                if let Some(previous) = seen_ids.insert(diagram.id.clone(), path.clone()) {
+                if let Some(previous) =
+                    seen_ids.insert(diagram.id.to_ascii_lowercase(), path.clone())
+                {
                     bail!(
                         "diagram ID {} is shared by {} and {}; remove a copied ID marker to create a new diagram",
                         diagram.id,
@@ -69,7 +114,15 @@ pub(crate) fn execute(options: &Options) -> Result<()> {
                         display_relative(path, &root)
                     );
                 }
-                let svg_path = output_dir.join(format!("{}.svg", diagram.id));
+                let filename = format!("{}.svg", diagram.id);
+                if let Some(names) = existing_names.get(&filename.to_ascii_lowercase())
+                    && let Some(conflicting) = names.iter().find(|name| *name != &filename)
+                {
+                    bail!(
+                        "diagram filename {filename} conflicts with existing {conflicting}; use a different diagram ID"
+                    );
+                }
+                let svg_path = output_dir.join(filename);
                 check_output_file(&svg_path)?;
                 let fingerprint = diagram_fingerprint(diagram);
                 let owner = STANDARD.encode(key.as_bytes());
@@ -119,6 +172,7 @@ pub(crate) fn execute(options: &Options) -> Result<()> {
             }
             document::render_document(&markdown, &diagrams, &links)?
         };
+        inputs.push((path.clone(), markdown.as_bytes().to_vec()));
         if updated != markdown {
             markdown_changes.push(Change {
                 path: path.clone(),
@@ -128,21 +182,34 @@ pub(crate) fn execute(options: &Options) -> Result<()> {
         }
     }
 
-    for change in svg_changes.iter().chain(markdown_changes.iter()) {
-        verify_unchanged(change)?;
-    }
-    // Write images first so every new Markdown reference has its SVG.
-    for change in svg_changes.iter().chain(markdown_changes.iter()) {
-        atomic_write(&change.path, &change.bytes)?;
-    }
-    println!(
-        "Updated {} Markdown file(s), {} SVG(s); {} diagram(s), {} cached.",
-        markdown_changes.len(),
-        svg_changes.len(),
+    Ok(Plan {
+        inputs,
+        svg_changes,
+        markdown_changes,
         diagram_count,
-        cached_count
-    );
-    Ok(())
+        cached_count,
+    })
+}
+
+fn svg_filenames(directory: &Path) -> Result<HashMap<String, Vec<String>>> {
+    let entries = match fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(HashMap::new()),
+        Err(error) => return Err(error.into()),
+    };
+    let mut names: HashMap<String, Vec<String>> = HashMap::new();
+    for entry in entries {
+        let name = entry?.file_name();
+        if let Some(name) = name.to_str()
+            && name.to_ascii_lowercase().ends_with(".svg")
+        {
+            names
+                .entry(name.to_ascii_lowercase())
+                .or_default()
+                .push(name.to_owned());
+        }
+    }
+    Ok(names)
 }
 
 fn is_markdown(path: &Path) -> bool {
@@ -305,7 +372,10 @@ fn verify_svg_ownership(svg: &str, root: &Path, key: &str, id: &str) -> Result<(
             let previous = fs::read_to_string(&canonical)?;
             let diagrams = document::discover(&previous, &owner)
                 .context("cannot confirm that the previous document released this diagram ID")?;
-            if diagrams.iter().any(|diagram| diagram.id == id) {
+            if diagrams
+                .iter()
+                .any(|diagram| diagram.id.eq_ignore_ascii_case(id))
+            {
                 bail!(
                     "diagram ID {id} still belongs to {owner}; restore the copied file and remove its ID marker to create a separate diagram"
                 );
@@ -332,16 +402,16 @@ fn same_file(left: &Path, right: &Path) -> Result<bool> {
     Ok(false)
 }
 
-fn verify_unchanged(change: &Change) -> Result<()> {
-    let current = match fs::read(&change.path) {
+fn verify_unchanged(path: &Path, original: Option<&[u8]>) -> Result<()> {
+    let current = match fs::read(path) {
         Ok(bytes) => Some(bytes),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
         Err(error) => return Err(error.into()),
     };
-    if current != change.original {
+    if current.as_deref() != original {
         bail!(
             "{} changed while planning; no files have been written. Run the command again",
-            change.path.display()
+            path.display()
         );
     }
     Ok(())
@@ -409,9 +479,46 @@ mod tests {
             bytes: b"replacement".to_vec(),
             original: Some(b"original".to_vec()),
         };
-        assert!(verify_unchanged(&change).is_ok());
+        assert!(verify_unchanged(&change.path, change.original.as_deref()).is_ok());
         fs::write(&path, "an editor changed this").unwrap();
-        assert!(verify_unchanged(&change).is_err());
+        assert!(verify_unchanged(&change.path, change.original.as_deref()).is_err());
         assert_eq!(fs::read_to_string(path).unwrap(), "an editor changed this");
+    }
+
+    #[test]
+    fn source_edits_after_planning_prevent_svg_writes_without_markdown_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("README.md");
+        fs::write(
+            &path,
+            "```mermaid\nflowchart LR\nA[Original] --> B[Finish]\n```\n",
+        )
+        .unwrap();
+        let options = Options {
+            path: dir.path().to_path_buf(),
+            restore: false,
+        };
+        execute(&options).unwrap();
+        let svg_path = fs::read_dir(dir.path().join("docs/diagrams"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        let original_svg = fs::read(&svg_path).unwrap();
+        let source = fs::read_to_string(&path)
+            .unwrap()
+            .replace("Original", "Snapshot A");
+        fs::write(&path, &source).unwrap();
+        let pending = plan(&options).unwrap();
+        assert!(pending.markdown_changes.is_empty());
+        assert_eq!(pending.svg_changes.len(), 1);
+
+        let edited = source.replace("Snapshot A", "Snapshot B");
+        fs::write(&path, &edited).unwrap();
+        let error = pending.apply().unwrap_err();
+        assert!(error.to_string().contains("changed while planning"));
+        assert_eq!(fs::read_to_string(&path).unwrap(), edited);
+        assert_eq!(fs::read(svg_path).unwrap(), original_svg);
     }
 }
