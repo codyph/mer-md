@@ -1,12 +1,8 @@
-# A file that should not change
+# Documentation notes
 
-This file has no actual Mermaid diagrams. Rendering the whole example project should leave it byte-for-byte unchanged.
+Documentation assets are stored under `docs/diagrams/`.
 
-- Ordinary prose and lists stay as they are.
-- Code blocks in other languages stay as they are.
-- A Mermaid fence shown inside a longer Markdown code fence is an example, not a diagram to render.
-
-## Ordinary code
+## Metadata
 
 ```json
 {
@@ -15,9 +11,9 @@ This file has no actual Mermaid diagrams. Rendering the whole example project sh
 }
 ```
 
-## A quoted Mermaid example
+## Markdown example
 
-The following is a Markdown code sample. Its inner Mermaid fence must stay visible as code:
+Markdown can include fenced examples:
 
 ````markdown
 ```mermaid
@@ -26,4 +22,4 @@ flowchart LR
 ```
 ````
 
-This final sentence should also stay unchanged.
+Source examples accompany the project documentation.

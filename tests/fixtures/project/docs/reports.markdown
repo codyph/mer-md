@@ -1,6 +1,6 @@
 # Reports and custom colours
 
-This file tests a pie chart and explicit colours that should remain fixed when the surrounding SVG switches between light and dark palettes.
+Documentation work includes writing, diagrams, and review.
 
 ## Example work breakdown
 

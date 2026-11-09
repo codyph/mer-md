@@ -1,6 +1,6 @@
 # Architecture
 
-These diagrams test multiple diagram types in one `.markdown` file and image links from a nested directory.
+The documentation model connects projects, documents, and diagrams.
 
 ## Classes
 
@@ -25,7 +25,7 @@ classDiagram
     }
 ```
 
-The text between diagrams should remain in place after rendering and restoring.
+Documents contain diagram sources and reference their generated images.
 
 ## Relationships
 
@@ -43,4 +43,4 @@ erDiagram
     }
 ```
 
-This closing paragraph should also remain unchanged.
+Diagram identities persist across source edits.

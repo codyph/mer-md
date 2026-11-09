@@ -28,7 +28,7 @@ def main():
     binary = (args.binary or root / "target" / args.target / "release" / ("mer-md.exe" if windows else "mer-md")).resolve(strict=True)
     subprocess.run([sys.executable, str(root / "scripts/third_party_licenses.py"), "--target", args.target], cwd=root, check=True)
     files = [(binary, binary.name)]
-    files.append((root / "docs/release.md", "README.md"))
+    files.append((root / "README.md", "README.md"))
     files += [(root / name, name) for name in ["LICENSE", "THIRD_PARTY_NOTICES", "THIRD_PARTY_LICENSES.txt"]]
     files += [(path, path.relative_to(root).as_posix()) for path in sorted((root / "demo").rglob("*")) if path.is_file()]
     assert len(list((root / "demo/docs/diagrams").glob("*.svg"))) == 6, "Render the demo before packaging"

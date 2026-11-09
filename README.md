@@ -6,7 +6,7 @@ No Node.js, browser, or rendering service required. [See the demo](demo/README.m
 
 ## Usage
 
-Download the executable for your platform from Releases and run it against a project:
+Download and extract the archive for your platform from [Releases](https://github.com/codyph/mer-md/releases), then run the executable against a project:
 
 ```powershell
 .\mer-md.exe .
@@ -49,9 +49,9 @@ PATH        Markdown file or project directory (default: .)
 - Centred images at their natural size, scaled down by responsive viewers.
 - Readable source comments, stable filenames, and cached rendering.
 
-Image centring requires HTML support, as provided by GitHub. Bitbucket Data Center's default renderer [escapes HTML](https://confluence.atlassian.com/bitbucketserver/markdown-syntax-guide-776639995.html). Automatic colours follow the browser's preference; colours explicitly set in Mermaid stay fixed.
+Image centring requires HTML support, as provided by GitHub. Bitbucket Data Center's default renderer [escapes HTML](https://confluence.atlassian.com/bitbucketserver/markdown-syntax-guide-776639995.html). Automatic colours follow the browser's preference; colours explicitly set in Mermaid stay fixed. Flowchart and state labels on opaque custom fills use a contrasting colour unless a text colour is explicitly set.
 
-Mermaid fences must be outside lists and blockquotes. Rendering uses [Merman](https://github.com/Latias94/merman); layouts and syntax support can differ from Mermaid.js. The [44-case corpus](tests/fixtures/diagrams/README.md) covers the supported diagram families.
+Mermaid fences must be outside lists and blockquotes. Rendering uses [Merman](https://github.com/Latias94/merman); layouts and syntax support can differ from Mermaid.js.
 
 ## Platforms
 
@@ -62,9 +62,9 @@ Mermaid fences must be outside lists and blockquotes. Rendering uses [Merman](ht
 | macOS Apple Silicon | `mer-md-macos-aarch64.tar.gz` |
 | macOS Intel | `mer-md-macos-x86_64.tar.gz` |
 
-Linux releases statically link musl to avoid a dependency on the distribution's glibc version. A compatible x86_64 CPU and Linux kernel are still required. macOS releases are built and tested on native GitHub runners.
+Linux builds statically link musl and require a compatible x86_64 CPU and Linux kernel.
 
-## Development
+## Build from source
 
 Requires Rust 1.95+ and platform build tools.
 
@@ -73,4 +73,4 @@ cargo test --locked
 cargo build --release --locked
 ```
 
-See [development](docs/development.md) for the source layout and checks, and [releasing](docs/releasing.md) for downloadable builds. Distributed dependencies are listed in [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES).
+See [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES) for dependency licences.

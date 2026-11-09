@@ -1,12 +1,9 @@
-//! Give exported images the layout's actual size instead of a viewport percentage.
+//! Intrinsic SVG dimensions with responsive scaling.
 
 use anyhow::{Context, Result, bail};
 use std::ops::Range;
 
-/// SVG percentages work for inline Mermaid, but are unsuitable intrinsic image
-/// dimensions: an external `<img>` can expand to the viewer's entire viewport.
-/// Export one CSS pixel per viewBox unit. Inline SVGs can still shrink to their
-/// container, while Markdown viewers apply their own responsive image rules.
+/// Export one pixel per viewBox unit to prevent external images from upscaling.
 pub fn normalize(svg: &str) -> Result<String> {
     let document = roxmltree::Document::parse(svg).context("invalid SVG during sizing")?;
     let root = document.root_element();

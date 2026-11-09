@@ -10,10 +10,6 @@ Source: https://github.com/Latias94/merman
 Exact EPL component source archive:
 https://static.crates.io/crates/merman-elk-layered/merman-elk-layered-0.9.3.crate
 
-This program is an independent Markdown utility. Its native renderer is an
-independent Mermaid implementation and may produce different layouts or
-support different syntax from the official Mermaid JavaScript renderer.
-
 Dependency versions are recorded in Cargo.lock. Release archives include
 the dependency license texts in THIRD_PARTY_LICENSES.txt, generated from
 that lockfile during packaging.

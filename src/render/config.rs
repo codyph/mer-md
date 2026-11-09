@@ -1,14 +1,9 @@
-//! Native per-family paints that do not inherit Mermaid's common palette.
-//!
-//! These are site defaults. Mermaid source directives and frontmatter retain
-//! their normal precedence when the engine merges the effective configuration.
+//! Family colour defaults overridden by Mermaid source configuration.
 
 use crate::render::palette::Theme;
 use serde_json::{Map, Value, json};
 
-/// Return root configuration keys, including a partial `themeVariables` map.
-/// Merge that nested map with the common palette before installing the root
-/// options; replacing `themeVariables` would discard unrelated diagram paints.
+/// Merge `themeVariables` with the common palette; replacing it discards paints.
 pub fn family_options(theme: &Theme) -> Map<String, Value> {
     let mut options = json!({
         "packet": {
@@ -87,9 +82,7 @@ pub fn family_options(theme: &Theme) -> Map<String, Value> {
     .expect("family defaults form an object")
     .clone();
 
-    // C4 shape defaults live under c4, separate from its common CSS palette.
-    // Preserve visual distinctions between people, systems and implementation
-    // components without changing any font, spacing or other layout setting.
+    // C4 shape paints use a separate configuration namespace.
     let c4 = options.get_mut("c4").unwrap().as_object_mut().unwrap();
     for kind in [
         "person",

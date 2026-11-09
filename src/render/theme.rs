@@ -196,9 +196,7 @@ fn declarations(css: &str) -> Vec<Declaration> {
             let start = value.start() + raw.len() - raw.trim_start().len();
             let property = capture["property"].to_ascii_lowercase();
             let component = match property.as_str() {
-                // These are shorthands, so only their colour component may
-                // change. Border widths/styles and background positioning
-                // remain in the skeleton and still trigger mismatch errors.
+                // Adapt shorthand colours while retaining geometry for comparison.
                 "background" => is_css_colour(core).then_some(0..core.len())?,
                 "border" => border_colour(core)?,
                 _ => 0..core.len(),

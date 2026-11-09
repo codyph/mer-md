@@ -15,11 +15,8 @@ pub fn clean(svg: &str) -> Result<String> {
     let mut edits: Vec<(Range<usize>, String)> = Vec::new();
 
     for node in root.descendants().filter(Node::is_element) {
-        // Resvg-safe export replaces a measured HTML label with a nested SVG
-        // viewport. Browser font substitution can exceed that estimate even
-        // when the surrounding node has room; clipping this internal viewport
-        // cuts off the final letters. Preserve the viewport's geometry and let
-        // its glyphs paint outside the measurement box.
+        // Substituted fonts can exceed HTML-label viewport estimates.
+        // Allow overflow without changing measured geometry.
         let fallback_viewport = node.has_tag_name("svg")
             && node.parent_element().is_some_and(|parent| {
                 parent.has_tag_name("g")
@@ -40,9 +37,7 @@ pub fn clean(svg: &str) -> Result<String> {
                 let insertion = node.range().start + "<svg".len();
                 edits.push((insertion..insertion, " overflow=\"visible\"".to_owned()));
             }
-            // The native export also writes overflow:hidden inline. That CSS
-            // outranks the presentation attribute, so update its declaration
-            // too while retaining every other generated style.
+            // Inline overflow overrides the presentation attribute.
             if let Some(attribute) = node.attribute_node("style") {
                 let style = visible_overflow_style(attribute.value());
                 if style != attribute.value() {
@@ -57,11 +52,8 @@ pub fn clean(svg: &str) -> Result<String> {
             }
         }
 
-        // EventModeling's renderer sets CSS color on its SVG lane headings.
-        // SVG text paints with fill, so make that paint follow currentColor.
-        // A presentation attribute lets any authored stylesheet fill retain
-        // normal CSS precedence, while explicit attributes/inline fills on the
-        // text or an ancestor remain untouched.
+        // EventModeling headings use CSS color; SVG text needs fill.
+        // A presentation attribute preserves authored CSS precedence.
         if event_modeling
             && node.has_tag_name("text")
             && node

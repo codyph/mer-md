@@ -1,7 +1,6 @@
 {
   "mermaid_version": "12.3.0",
   "native_renderer_baseline": "12.1.0",
-  "checked_on": "2026-11-09",
   "documentation": "https://mermaid.js.org/intro/",
   "registration_source": "https://github.com/mermaid-js/mermaid/blob/mermaid%4012.3.0/packages/mermaid/src/diagram-api/diagram-orchestration.ts",
   "documented_family_count": 31,

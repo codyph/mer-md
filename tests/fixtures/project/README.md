@@ -1,10 +1,8 @@
-# Sample documentation project
+# Documentation pipeline
 
-This file contains two independent diagrams with ordinary Markdown between them. Rendering should keep each diagram in its original position and preserve the surrounding text.
+Mermaid diagrams describe the documentation pipeline and editing workflow.
 
 ## Rendering workflow
-
-After rendering, change `Read Markdown` to `Read project files` directly in the commented source. Rendering again should update the same SVG.
 
 ```mermaid
 flowchart LR
@@ -14,11 +12,11 @@ flowchart LR
     B -->|No| E[Keep file unchanged]
 ```
 
-This paragraph should remain between the two diagrams after rendering and restoring.
+Rendering replaces diagram sources with references to generated SVG images.
 
 ## Editing workflow
 
-This second diagram tests participant labels, messages, a note, and more than one diagram in a single file.
+Diagram identities persist across source edits.
 
 ```mermaid
 sequenceDiagram
@@ -32,4 +30,4 @@ sequenceDiagram
     T-->>U: Ready to commit
 ```
 
-See [architecture](docs/architecture.markdown), [workflows](docs/workflows.md), and [reports](docs/reports.markdown) for nested Markdown files.
+See [architecture](docs/architecture.markdown), [workflows](docs/workflows.md), and [reports](docs/reports.markdown).
