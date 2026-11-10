@@ -32,8 +32,7 @@ pub struct Theme {
     pub pie_legend_text_color: String,
 }
 
-const FONT_FAMILY: &str =
-    "system-ui, -apple-system, Segoe UI, DejaVu Sans, Liberation Sans, sans-serif";
+const FONT_FAMILY: &str = "Arial, Liberation Sans, sans-serif";
 
 pub fn light_theme() -> Theme {
     Theme {

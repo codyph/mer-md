@@ -1,4 +1,4 @@
-mer-md embeds these rendering and layout components:
+mer-md embeds these rendering, layout, and font components:
 
 Merman 0.9.3, dual-licensed under the MIT license or the Apache License,
 Version 2.0 (MIT OR Apache-2.0).
@@ -9,6 +9,10 @@ merman-elk-layered 0.9.3 port of Eclipse ELK under EPL-2.0.
 Source: https://github.com/Latias94/merman
 Exact EPL component source archive:
 https://static.crates.io/crates/merman-elk-layered/merman-elk-layered-0.9.3.crate
+
+Liberation Sans 2.1.5 under the SIL Open Font License, Version 1.1.
+Source: https://github.com/liberationfonts/liberation-fonts/releases/tag/2.1.5
+Copyright notices and the full licence are in assets/fonts/LICENSE.
 
 Dependency versions are recorded in Cargo.lock. Release archives include
 the dependency license texts in THIRD_PARTY_LICENSES.txt, generated from

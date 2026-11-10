@@ -147,6 +147,10 @@ mod tests {
                 "gitgraph",
                 include_str!("../../tests/fixtures/diagrams/gitgraph.mmd"),
             ),
+            (
+                "kanban",
+                include_str!("../../tests/fixtures/diagrams/kanban.mmd"),
+            ),
         ] {
             let light =
                 crate::render::graph::render(source, &crate::render::palette::light_theme())

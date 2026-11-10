@@ -63,6 +63,7 @@ Mermaid fences must be outside lists and blockquotes. Rendering uses [Merman](ht
 | macOS Intel | `mer-md-macos-x86_64.tar.gz` |
 
 Linux builds statically link musl and require a compatible x86_64 CPU and Linux kernel.
+Fonts used for layout are embedded in the executable on every platform.
 
 ## Build from source
 

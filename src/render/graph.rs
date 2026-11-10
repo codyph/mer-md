@@ -101,9 +101,15 @@ pub fn render(source: &str, theme: &Theme) -> Result<String> {
         );
     }
     let mut config_value = json!({
-        "theme": "base", "look": "classic", "layout": "elk", "htmlLabels": false,
+        "theme": "base", "look": "classic", "layout": "elk", "htmlLabels": true,
+        "darkMode": theme.text_color.eq_ignore_ascii_case("#E7EDF7"),
         "fontFamily": theme.font_family,
-        "flowchart": {"htmlLabels": false, "curve": "rounded"},
+        "flowchart": {
+            "htmlLabels": true, "curve": "basis", "wrappingWidth": 240,
+            "minNodeWidth": 0, "padding": 15, "nodeSpacing": 60,
+            "rankSpacing": 80, "diagramPadding": 12
+        },
+        "state": {"wrappingWidth": 240, "minNodeWidth": 0},
         "themeVariables": variables
     });
     if family == Some("usecase") {
@@ -130,6 +136,7 @@ pub fn render(source: &str, theme: &Theme) -> Result<String> {
     }
     let request = SvgRequest {
         layout,
+        environment: crate::render::fonts::environment()?,
         pipeline: Some(merman::svg::SvgPipeline::resvg_safe()),
         options: merman::svg::SvgRenderOptions {
             diagram_id: Some("mer-md".to_owned()),
@@ -143,12 +150,13 @@ pub fn render(source: &str, theme: &Theme) -> Result<String> {
     let RenderOutput::Svg(Some(svg)) = output else {
         bail!("source did not contain a Mermaid graph")
     };
-    normalize_svg(svg.svg())
+    let expanded = crate::render::labels::expand(svg.svg())?;
+    normalize_svg(&expanded)
 }
 
 /// Reserve half a caption's clearance per C4 shape; margins apply on both sides.
 fn c4_relationship_margin(source: &str, site: &serde_json::Value) -> Result<f64> {
-    use merman::svg::{DeterministicTextMeasurer, TextMeasurer, TextStyle};
+    use merman::svg::TextStyle;
     let engine = Engine::new().with_site_config(MermaidConfig::from_value(site.clone()));
     let Some(parsed) = engine
         .parse_diagram_sync(source, merman::ParseOptions::default())
@@ -203,15 +211,11 @@ fn c4_relationship_margin(source: &str, site: &serde_json::Value) -> Result<f64>
                 } else {
                     text.to_owned()
                 };
-                width = width.max(
-                    DeterministicTextMeasurer::default()
-                        .measure(&text, &style)
-                        .width,
-                );
+                width = width.max(crate::render::fonts::text_width(&text, &style)?);
             }
         }
     }
-    // Extra allowance covers system font substitution without embedding fonts.
+    // Leave clearance for caption padding and font substitution in SVG viewers.
     Ok(((width * 1.15 + 90.0) / 2.0).max(50.0))
 }
 
@@ -263,71 +267,7 @@ fn normalize_svg(svg: &str) -> Result<String> {
             .map(|range| (range, String::new())),
     );
 
-    let fixed_node_colours: HashMap<_, _> = root
-        .descendants()
-        .filter(|node| has_class(*node, "node"))
-        .filter_map(|node| {
-            node.children()
-                .filter(|shape| {
-                    shape.is_element()
-                        && matches!(
-                            shape.tag_name().name(),
-                            "rect" | "circle" | "ellipse" | "polygon" | "path"
-                        )
-                })
-                .find_map(|shape| {
-                    let style = shape.attribute("style")?;
-                    if ["opacity", "fill-opacity"].into_iter().any(|property| {
-                        inline_property(style, property)
-                            .or_else(|| shape.attribute(property))
-                            .is_some_and(|value| {
-                                value
-                                    .split('!')
-                                    .next()
-                                    .unwrap_or(value)
-                                    .trim()
-                                    .parse::<f64>()
-                                    .ok()
-                                    != Some(1.0)
-                            })
-                    }) {
-                        return None;
-                    }
-                    let fill = inline_property(style, "fill")?;
-                    crate::render::palette::contrasting_text(fill).map(|colour| (node.id(), colour))
-                })
-        })
-        .collect();
-
-    // Honour authored text colours; fixed node fills need readable defaults.
-    for text in root
-        .descendants()
-        .filter(|node| node.has_tag_name("text") || node.has_tag_name("tspan"))
-    {
-        let Some(color) = authored_label_color(text)
-            .or_else(|| fixed_node_label_colour(text, &fixed_node_colours))
-        else {
-            continue;
-        };
-        if let Some(style) = text.attribute_node("style") {
-            let old = style.value().trim_end();
-            let separator = if old.is_empty() || old.ends_with(';') {
-                ""
-            } else {
-                ";"
-            };
-            edits.push((
-                style.range_value(),
-                escape_attribute(&format!("{old}{separator}fill:{color}")),
-            ));
-        } else {
-            let insert = text.range().start + 1 + text.tag_name().name().len();
-            edits.push((
-                insert..insert,
-                format!(" style=\"{}\"", escape_attribute(&format!("fill:{color}"))),
-            ));
-        }
-    }
+    edits.extend(label_colour_edits(root));
 
     // Correct left-aligned rows inside the native renderer's centred state box.
     for node in root
@@ -681,7 +621,7 @@ fn position_edge_labels(svg: &str) -> Result<String> {
 /// Undo C4's extra half-width on relationship captions using native font metrics.
 /// Relationship callers already supply the midpoint; authored offsets stay intact.
 fn center_c4_relationship_text(svg: &str) -> Result<String> {
-    use merman::svg::{DeterministicTextMeasurer, TextMeasurer, TextStyle};
+    use merman::svg::TextStyle;
     let doc = Document::parse(svg).context("graph renderer returned invalid SVG")?;
     if doc.root_element().attribute("aria-roledescription") != Some("c4") {
         return Ok(svg.to_owned());
@@ -707,19 +647,17 @@ fn center_c4_relationship_text(svg: &str) -> Result<String> {
             &content
         };
         let style = text.attribute("style").unwrap_or_default();
-        DeterministicTextMeasurer::default()
-            .measure(
-                content,
-                &TextStyle {
-                    font_family: inline_property(style, "font-family").map(str::to_owned),
-                    font_size: inline_property(style, "font-size")
-                        .and_then(|size| size.trim_end_matches("px").parse().ok())
-                        .unwrap_or(12.0),
-                    font_weight: inline_property(style, "font-weight").map(str::to_owned),
-                    ..Default::default()
-                },
-            )
-            .width
+        crate::render::fonts::text_width(
+            content,
+            &TextStyle {
+                font_family: inline_property(style, "font-family").map(str::to_owned),
+                font_size: inline_property(style, "font-size")
+                    .and_then(|size| size.trim_end_matches("px").parse().ok())
+                    .unwrap_or(12.0),
+                font_weight: inline_property(style, "font-weight").map(str::to_owned),
+                ..Default::default()
+            },
+        )
     };
     let mut edits = Vec::new();
     for group in doc
@@ -737,16 +675,16 @@ fn center_c4_relationship_text(svg: &str) -> Result<String> {
             }
         }
         for block in blocks {
-            let label_width = block
-                .iter()
-                .filter(|text| text.attribute("font-style") != Some("italic"))
-                .map(|text| measure(*text, false))
-                .fold(0.0, f64::max);
-            let technology_width = block
-                .iter()
-                .filter(|text| text.attribute("font-style") == Some("italic"))
-                .map(|text| measure(*text, true))
-                .fold(label_width, f64::max);
+            let mut label_width: f64 = 0.0;
+            let mut technology_width: f64 = 0.0;
+            for text in &block {
+                if text.attribute("font-style") == Some("italic") {
+                    technology_width = technology_width.max(measure(*text, true)?);
+                } else {
+                    label_width = label_width.max(measure(*text, false)?);
+                }
+            }
+            technology_width = technology_width.max(label_width);
             for text in block {
                 let Some(x) = text.attribute_node("x") else {
                     continue;
@@ -978,7 +916,93 @@ fn connector_points(path: Node<'_, '_>) -> Option<Vec<(f64, f64)>> {
     (points.len() >= 2).then_some(points)
 }
 
+/// Adaptive paint variables distinguish default text from authored HTML colours.
+pub fn contrast_automatic_labels(svg: &str) -> Result<String> {
+    let document = Document::parse(svg).context("invalid SVG during label colour adjustment")?;
+    let mut edits = label_colour_edits(document.root_element());
+    edits.sort_by_key(|(range, _)| std::cmp::Reverse(range.start));
+    let mut result = svg.to_owned();
+    for (range, replacement) in edits {
+        result.replace_range(range, &replacement);
+    }
+    Ok(result)
+}
+
+fn label_colour_edits(root: Node<'_, '_>) -> Vec<(Range<usize>, String)> {
+    let fixed_node_colours: HashMap<_, _> = root
+        .descendants()
+        .filter(|node| has_class(*node, "node"))
+        .filter_map(|node| {
+            node.children()
+                .filter(|shape| {
+                    shape.is_element()
+                        && matches!(
+                            shape.tag_name().name(),
+                            "rect" | "circle" | "ellipse" | "polygon" | "path"
+                        )
+                })
+                .find_map(|shape| {
+                    let style = shape.attribute("style")?;
+                    if ["opacity", "fill-opacity"].into_iter().any(|property| {
+                        inline_property(style, property)
+                            .or_else(|| shape.attribute(property))
+                            .is_some_and(|value| {
+                                value
+                                    .split('!')
+                                    .next()
+                                    .unwrap_or(value)
+                                    .trim()
+                                    .parse::<f64>()
+                                    .ok()
+                                    != Some(1.0)
+                            })
+                    }) {
+                        return None;
+                    }
+                    let fill = inline_property(style, "fill")?;
+                    crate::render::palette::contrasting_text(fill).map(|colour| (node.id(), colour))
+                })
+        })
+        .collect();
+    let mut edits = Vec::new();
+    for text in root
+        .descendants()
+        .filter(|node| node.has_tag_name("text") || node.has_tag_name("tspan"))
+    {
+        let Some(color) = authored_label_color(text)
+            .or_else(|| fixed_node_label_colour(text, &fixed_node_colours))
+        else {
+            continue;
+        };
+        if let Some(style) = text.attribute_node("style") {
+            let old = style.value().trim_end();
+            let separator = if old.is_empty() || old.ends_with(';') {
+                ""
+            } else {
+                ";"
+            };
+            edits.push((
+                style.range_value(),
+                escape_attribute(&format!("{old}{separator}fill:{color}")),
+            ));
+        } else {
+            let insert = text.range().start + 1 + text.tag_name().name().len();
+            edits.push((
+                insert..insert,
+                format!(" style=\"{}\"", escape_attribute(&format!("fill:{color}"))),
+            ));
+        }
+    }
+    edits
+}
+
 fn authored_label_color<'a>(node: Node<'a, '_>) -> Option<&'a str> {
+    if node
+        .ancestors()
+        .any(|parent| has_class(parent, "merman-foreignobject-fallback-text"))
+    {
+        return None;
+    }
     if !node.ancestors().any(|parent| has_class(parent, "label")) {
         return None;
     }
@@ -1004,6 +1028,13 @@ fn fixed_node_label_colour(
 ) -> Option<&'static str> {
     let mut label = false;
     for ancestor in node.ancestors().filter(Node::is_element) {
+        if has_class(ancestor, "merman-foreignobject-fallback-text") {
+            let fill = inline_property(ancestor.attribute("style").unwrap_or(""), "fill")?;
+            if fill.starts_with("var(--pm-paint-") {
+                continue;
+            }
+            return None;
+        }
         let style = ancestor.attribute("style").unwrap_or("");
         if ancestor.attribute("fill").is_some()
             || inline_property(style, "fill").is_some()

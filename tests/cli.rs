@@ -59,7 +59,7 @@ fn svg_paths(root: &Path) -> Vec<PathBuf> {
 fn svg_has_text(svg: &str, expected: &str) -> bool {
     let document = roxmltree::Document::parse(svg).unwrap();
     document.descendants().any(|node| {
-        node.has_tag_name("text")
+        (node.has_tag_name("text") || node.has_tag_name("foreignObject"))
             && node
                 .descendants()
                 .filter(|child| child.is_text())

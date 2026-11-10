@@ -1,0 +1,11 @@
+flowchart LR
+    A["Source"] -->|forward| B["Middle"]
+    B --> C["Target"]
+    C -->|return| A
+    B -->|repeat| B
+    D["Both"] <-->|exchange| E["Other"]
+    F["Dotted"] -.->|dotted| G["Reply"]
+    H["Thick"] ==>|thick| I["Finish"]
+    J["Plain"] --- K["Joined"]
+    L["Dotted both"] <-.-> M["Peer"]
+    N["Thick both"] <==> O["Peer"]

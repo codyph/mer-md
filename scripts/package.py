@@ -30,6 +30,7 @@ def main():
     files = [(binary, binary.name)]
     files.append((root / "README.md", "README.md"))
     files += [(root / name, name) for name in ["LICENSE", "THIRD_PARTY_NOTICES", "THIRD_PARTY_LICENSES.txt"]]
+    files.append((root / "assets/fonts/LICENSE", "assets/fonts/LICENSE"))
     files += [(path, path.relative_to(root).as_posix()) for path in sorted((root / "demo").rglob("*")) if path.is_file()]
     assert len(list((root / "demo/docs/diagrams").glob("*.svg"))) == 6, "Render the demo before packaging"
     output = root / "artifacts" / f"mer-md-{PLATFORMS[args.target]}{'.zip' if windows else '.tar.gz'}"

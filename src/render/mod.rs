@@ -3,14 +3,17 @@
 mod cleanup;
 mod config;
 mod dimensions;
+mod fonts;
 mod graph;
+mod labels;
 mod palette;
 mod theme;
 
 use anyhow::{Context, Result, bail};
 
 /// Cache identity for rendering behaviour.
-pub const RENDERER_VERSION: &str = "merman/0.9.3;native-layout/4;auto-palette/4;svg-sizing/1";
+pub const RENDERER_VERSION: &str =
+    "merman/0.9.3;native-layout/8;liberation-sans/2.1.5;auto-palette/5;svg-sizing/1";
 
 /// Render an SVG that follows the browser colour scheme.
 pub fn render(source: &str) -> Result<String> {
@@ -20,6 +23,7 @@ pub fn render(source: &str) -> Result<String> {
     let light = crate::render::graph::render(source, &crate::render::palette::light_theme())?;
     let dark = crate::render::graph::render(source, &crate::render::palette::dark_theme())?;
     let svg = crate::render::theme::adaptive(&light, &dark)?;
+    let svg = crate::render::graph::contrast_automatic_labels(&svg)?;
     let svg = crate::render::cleanup::clean(&svg)?;
     let svg = fit_treemap_labels(&svg)?;
     let svg = remove_canvas_and_label_backgrounds(&svg)?;
@@ -156,6 +160,22 @@ fn remove_canvas_and_label_backgrounds(svg: &str) -> Result<String> {
 mod tests {
     use super::*;
 
+    fn visible_labels(document: &roxmltree::Document<'_>) -> Vec<String> {
+        document
+            .descendants()
+            .filter(|node| {
+                node.has_tag_name("text")
+                    && !node.ancestors().any(|parent| parent.has_tag_name("defs"))
+            })
+            .map(|node| {
+                node.descendants()
+                    .filter(|child| child.is_text())
+                    .filter_map(|child| child.text())
+                    .collect()
+            })
+            .collect()
+    }
+
     #[test]
     fn treemap_leaf_text_fits_its_cell_without_changing_data_geometry() {
         let source = include_str!("../../tests/fixtures/diagrams/treemap.mmd");
@@ -207,8 +227,14 @@ mod tests {
         assert!(svg.to_ascii_lowercase().contains("#363052"));
         assert!(!svg.contains("var(--pm-background)"));
         assert!(!svg.contains("var(--pm-edge-label-background)"));
-        assert_eq!(svg.matches(">Start</tspan>").count(), 1);
         let document = roxmltree::Document::parse(&svg).unwrap();
+        assert_eq!(
+            visible_labels(&document)
+                .iter()
+                .filter(|text| text.as_str() == "Start")
+                .count(),
+            1
+        );
         assert!(
             document
                 .descendants()
@@ -230,7 +256,12 @@ mod tests {
     fn explicit_styles_and_color_looking_labels_are_preserved() {
         let source = "flowchart LR\nA[\"#F8FAFC\"] --> B[Fixed]\nstyle B fill:#ff0000,stroke:#0000ff,color:#ffffff";
         let svg = render(source).unwrap();
-        assert!(svg.contains(">#F8FAFC</tspan>"));
+        let document = roxmltree::Document::parse(&svg).unwrap();
+        assert!(
+            visible_labels(&document)
+                .iter()
+                .any(|text| text == "#F8FAFC")
+        );
         assert!(svg.contains("fill=\"#ff0000\"") || svg.contains("fill:#ff0000"));
         assert!(svg.contains("stroke=\"#0000ff\"") || svg.contains("stroke:#0000ff"));
     }

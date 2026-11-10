@@ -1,5 +1,49 @@
 use super::*;
 
+fn visible_texts<'a, 'input>(node: Node<'a, 'input>) -> Vec<Node<'a, 'input>> {
+    node.descendants()
+        .filter(|node| {
+            node.has_tag_name("text")
+                && !node.ancestors().any(|parent| parent.has_tag_name("defs"))
+                && !text_content(*node).trim().is_empty()
+        })
+        .collect()
+}
+
+fn text_content(node: Node<'_, '_>) -> String {
+    node.descendants()
+        .filter(Node::is_text)
+        .filter_map(|node| node.text())
+        .collect()
+}
+
+fn text_center(node: Node<'_, '_>) -> (f64, f64) {
+    point_to_global(
+        node,
+        number(node, "x", 0.0).unwrap(),
+        number(node, "y", 0.0).unwrap(),
+    )
+    .unwrap()
+}
+
+fn block_center(rows: &[Node<'_, '_>]) -> (f64, f64) {
+    let mut bounds = Bounds::empty();
+    for row in rows {
+        let (x, y) = text_center(*row);
+        bounds.point(x, y);
+    }
+    (
+        (bounds.min_x + bounds.max_x) / 2.0,
+        (bounds.min_y + bounds.max_y) / 2.0,
+    )
+}
+
+fn text_fill<'a, 'input>(node: Node<'a, 'input>) -> Option<&'a str> {
+    inline_property(node.attribute("style").unwrap_or(""), "fill")
+        .or_else(|| node.attribute("fill"))
+        .map(|value| value.strip_suffix("!important").unwrap_or(value).trim())
+}
+
 #[test]
 fn detects_diagram_families_through_frontmatter_and_comments() {
     assert!(supports(
@@ -38,18 +82,81 @@ fn state_uses_centered_native_text_without_label_backgrounds() {
         .children()
         .find(|node| has_class(*node, "label"))
         .unwrap();
+    let shape = state
+        .children()
+        .find(|child| child.has_tag_name("rect"))
+        .unwrap();
+    let bounds = shape_global_bounds(shape).unwrap();
+    let rows = visible_texts(label);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].attribute("text-anchor"), Some("middle"));
+    let center = text_center(rows[0]);
+    assert!((center.0 - (bounds.min_x + bounds.max_x) / 2.0).abs() < 0.1);
+    assert!((center.1 - (bounds.min_y + bounds.max_y) / 2.0).abs() < 0.1);
+}
+
+#[test]
+fn long_node_labels_wrap_without_shrinking_or_clipping_the_text() {
+    let content = "Receive customer requests and validate all required project documents before scheduling the approved work for delivery";
+    let source = format!("flowchart LR\nA[\"{content}\"] --> B[Complete]");
+    let svg = render(&source, &crate::render::palette::light_theme()).unwrap();
+    let doc = Document::parse(&svg).unwrap();
+    let node = doc
+        .descendants()
+        .find(|node| {
+            has_class(*node, "node") && node.attribute("id").is_some_and(|id| id.contains("-A-"))
+        })
+        .unwrap();
+    let body = node
+        .children()
+        .filter_map(shape_global_bounds)
+        .reduce(Bounds::union)
+        .unwrap();
+    let rows = visible_texts(node);
+    assert!(rows.len() >= 2, "long labels must wrap at normal text size");
+    assert_eq!(
+        rows.iter()
+            .map(|row| text_content(*row))
+            .collect::<Vec<_>>()
+            .join(" ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" "),
+        content
+    );
     assert!(
-        label
-            .attribute("transform")
+        body.max_x - body.min_x > 240.0,
+        "long labels need a suitably wide node"
+    );
+    for row in rows {
+        let style = row.attribute("style").unwrap();
+        let font_size: f64 = inline_property(style, "font-size")
             .unwrap()
-            .starts_with("translate(0,")
-    );
-    assert!(
-        label
-            .descendants()
-            .filter(|node| has_class(*node, "text-outer-tspan"))
-            .all(|row| row.attribute("text-anchor") == Some("middle"))
-    );
+            .trim_end_matches("px")
+            .parse()
+            .unwrap();
+        assert!(
+            font_size >= 16.0,
+            "labels must fit without reducing the font size"
+        );
+        let width = crate::render::fonts::text_width(
+            &text_content(row),
+            &merman::svg::TextStyle {
+                font_family: inline_property(style, "font-family").map(str::to_owned),
+                font_size,
+                font_weight: inline_property(style, "font-weight").map(str::to_owned),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let (x, y) = text_center(row);
+        assert!(
+            x - width / 2.0 >= body.min_x + 10.0 && x + width / 2.0 <= body.max_x - 10.0,
+            "measured text must fit with padding: {:?}; width {width}; body {body:?}",
+            text_content(row)
+        );
+        assert!(y - font_size / 2.0 > body.min_y && y + font_size / 2.0 < body.max_y);
+    }
 }
 
 #[test]
@@ -72,40 +179,31 @@ fn titled_state_keeps_native_title_and_multiline_description_alignment() {
         .children()
         .find(|child| has_class(*child, "label"))
         .unwrap();
-    assert!(!label.children().any(|child| child.has_tag_name("text")));
-    let x: f64 = label
-        .attribute("transform")
-        .unwrap()
-        .strip_prefix("translate(")
-        .unwrap()
-        .split(',')
-        .next()
-        .unwrap()
-        .trim()
-        .parse()
-        .unwrap();
-    assert!(x < 0.0, "titled state's native label origin was recentered");
-    let sections: Vec<_> = label
-        .children()
-        .filter(|child| child.has_tag_name("g"))
-        .collect();
+    let rows = visible_texts(label);
     assert_eq!(
-        sections.len(),
-        2,
-        "title and multiline description stay in separate centered groups"
+        rows.iter()
+            .map(|row| text_content(*row))
+            .collect::<Vec<_>>(),
+        ["A much longer state title", "x", "y"]
     );
-    assert!(
-        sections[1]
-            .descendants()
-            .filter_map(|child| child.text())
-            .any(|text| text.contains('x'))
-    );
-    assert!(
-        sections[1]
-            .descendants()
-            .filter_map(|child| child.text())
-            .any(|text| text.contains('y'))
-    );
+    let bounds = titled_state
+        .descendants()
+        .find(|node| node.has_tag_name("rect") && has_class(*node, "outer"))
+        .and_then(shape_global_bounds)
+        .unwrap();
+    let centers: Vec<_> = rows.iter().map(|row| text_center(*row)).collect();
+    let middle_x = (bounds.min_x + bounds.max_x) / 2.0;
+    for (x, y) in &centers {
+        assert!(
+            (x - middle_x).abs() < 0.1,
+            "state title and descriptions must share a center"
+        );
+        assert!(
+            *y > bounds.min_y && *y < bounds.max_y,
+            "state text must fit inside its body"
+        );
+    }
+    assert!(centers.windows(2).all(|pair| pair[0].1 < pair[1].1));
 }
 
 #[test]
@@ -122,80 +220,61 @@ fn explicit_node_paint_survives_svg_normalization() {
 #[test]
 fn fixed_fill_labels_are_readable_while_default_and_edge_labels_follow_the_theme() {
     let source = "flowchart LR\nA[Light] -->|Transition| B[Dark]\nB --> C[Default]\nstyle A fill:#ffffff,opacity:1\nclassDef dark fill:#000000\nclass B dark";
-    for theme in [
-        crate::render::palette::light_theme(),
-        crate::render::palette::dark_theme(),
-    ] {
-        let svg = render(source, &theme).unwrap();
-        let document = Document::parse(&svg).unwrap();
-        for (label, colour) in [("Light", "#263347"), ("Dark", "#E7EDF7")] {
-            let text = document
-                .descendants()
-                .find(|node| {
-                    node.has_tag_name("text")
-                        && node
-                            .descendants()
-                            .filter(Node::is_text)
-                            .any(|content| content.text() == Some(label))
-                })
-                .unwrap();
-            assert_eq!(
-                inline_property(text.attribute("style").unwrap(), "fill"),
-                Some(colour)
-            );
-            assert!(
-                text.descendants()
-                    .filter(|node| node.has_tag_name("tspan"))
-                    .all(|node| {
-                        inline_property(node.attribute("style").unwrap(), "fill") == Some(colour)
-                    })
-            );
-        }
-        for label in ["Default", "Transition"] {
-            let text = document
-                .descendants()
-                .find(|node| {
-                    node.has_tag_name("text")
-                        && node
-                            .descendants()
-                            .filter(Node::is_text)
-                            .any(|content| content.text() == Some(label))
-                })
-                .unwrap();
-            assert!(text.descendants().filter(Node::is_element).all(|node| {
-                inline_property(node.attribute("style").unwrap_or(""), "fill").is_none()
-            }));
-        }
-        assert!(svg.contains("fill:#ffffff"));
-        assert!(svg.contains("fill:#000000"));
+    let svg = crate::render::render(source).unwrap();
+    let document = Document::parse(&svg).unwrap();
+    for (label, colour) in [("Light", "#263347"), ("Dark", "#E7EDF7")] {
+        let text = visible_texts(document.root_element())
+            .into_iter()
+            .find(|node| text_content(*node) == label)
+            .unwrap();
+        assert_eq!(
+            text_fill(text),
+            Some(colour),
+            "{label} must contrast with its fixed fill in both themes"
+        );
+        assert!(
+            text.descendants()
+                .filter(|node| node.has_tag_name("tspan"))
+                .all(|node| text_fill(node).is_none_or(|paint| paint == colour))
+        );
     }
+    let styles = document
+        .descendants()
+        .filter(|node| node.has_tag_name("style"))
+        .filter_map(|node| node.text())
+        .collect::<String>();
+    for label in ["Default", "Transition"] {
+        let text = visible_texts(document.root_element())
+            .into_iter()
+            .find(|node| text_content(*node) == label)
+            .unwrap();
+        let variable = text_fill(text)
+            .unwrap()
+            .strip_prefix("var(")
+            .and_then(|value| value.strip_suffix(')'))
+            .expect("theme-dependent text paint");
+        for colour in ["#263347", "#E7EDF7"] {
+            assert!(
+                styles.contains(&format!("{variable}:{colour};")),
+                "{label} must follow the theme's text paint {colour}"
+            );
+        }
+    }
+    assert!(svg.contains("fill:#ffffff"));
+    assert!(svg.contains("fill:#000000"));
 }
 
 #[test]
 fn fixed_state_fill_gets_readable_text_without_overriding_explicit_colour() {
     let source = "stateDiagram-v2\n[*] --> Light\nLight --> Custom\nclassDef light fill:#ffffff\nclassDef custom fill:#ffffff,color:#ff0000\nclass Light light\nclass Custom custom";
-    for theme in [
-        crate::render::palette::light_theme(),
-        crate::render::palette::dark_theme(),
-    ] {
-        let svg = render(source, &theme).unwrap();
-        let document = Document::parse(&svg).unwrap();
-        for (label, colour) in [("Light", "#263347"), ("Custom", "#ff0000 !important")] {
-            let text = document
-                .descendants()
-                .find(|node| {
-                    node.has_tag_name("text")
-                        && node
-                            .descendants()
-                            .filter(Node::is_text)
-                            .any(|content| content.text() == Some(label))
-                })
-                .unwrap();
-            assert_eq!(
-                inline_property(text.attribute("style").unwrap(), "fill"),
-                Some(colour)
-            );
-        }
+    let svg = crate::render::render(source).unwrap();
+    let document = Document::parse(&svg).unwrap();
+    for (label, colour) in [("Light", "#263347"), ("Custom", "#ff0000")] {
+        let text = visible_texts(document.root_element())
+            .into_iter()
+            .find(|node| text_content(*node) == label)
+            .unwrap();
+        assert_eq!(text_fill(text), Some(colour));
     }
 }
 
@@ -205,29 +284,49 @@ fn authored_label_colors_are_visible_svg_text_fills() {
     let svg = render(source, &crate::render::palette::dark_theme()).unwrap();
     let doc = Document::parse(&svg).unwrap();
     for (word, color) in [("success", "#064e3b"), ("warning", "#78350f")] {
-        let content = doc
-            .descendants()
-            .find(|node| {
-                node.is_text()
-                    && node
-                        .parent()
-                        .is_some_and(|parent| parent.has_tag_name("tspan"))
-                    && node.text().is_some_and(|text| text.contains(word))
-            })
+        let text = visible_texts(doc.root_element())
+            .into_iter()
+            .find(|node| text_content(*node).contains(word))
             .unwrap();
-        let span = content.parent().unwrap();
-        assert_eq!(
-            inline_property(span.attribute("style").unwrap(), "fill"),
-            Some(format!("{color} !important").as_str())
+        assert_eq!(text_fill(text), Some(color));
+        assert!(
+            text.descendants()
+                .filter(|node| node.has_tag_name("tspan"))
+                .all(|node| text_fill(node).is_none_or(|paint| paint == color))
         );
-        let text = span
-            .ancestors()
-            .find(|node| node.has_tag_name("text"))
-            .unwrap();
-        assert_eq!(
-            inline_property(text.attribute("style").unwrap(), "fill"),
-            Some(format!("{color} !important").as_str())
-        );
+    }
+}
+
+#[test]
+fn inline_label_colours_take_precedence_over_node_colours_and_contrast_defaults() {
+    let source = "flowchart LR\nA[\"<span style='color:#ff0000'>Explicit red</span>\"] --> B[\"<span style='color:#00ff00'>Explicit green</span>\"] --> C[\"<span style='color:#263347'>Explicit default</span>\"]\nstyle A fill:#ffffff\nstyle B fill:#000000,color:#0000ff\nstyle C fill:#000000";
+    for (stage, svg) in [
+        (
+            "light",
+            render(source, &crate::render::palette::light_theme()).unwrap(),
+        ),
+        (
+            "dark",
+            render(source, &crate::render::palette::dark_theme()).unwrap(),
+        ),
+        ("adaptive", crate::render::render(source).unwrap()),
+    ] {
+        let document = Document::parse(&svg).unwrap();
+        for (label, colour) in [
+            ("Explicit red", "#ff0000"),
+            ("Explicit green", "#00ff00"),
+            ("Explicit default", "#263347"),
+        ] {
+            let text = visible_texts(document.root_element())
+                .into_iter()
+                .find(|node| text_content(*node) == label)
+                .unwrap();
+            assert_eq!(
+                text_fill(text),
+                Some(colour),
+                "{label} must retain its authored inline colour in {stage} output"
+            );
+        }
     }
 }
 
@@ -401,10 +500,12 @@ fn class_relationship_text_is_centered_on_its_connector() {
         .descendants()
         .filter(|node| has_class(*node, "label") && node.attribute("data-id").is_some())
     {
-        let Some(text) = label.descendants().find(|node| node.has_tag_name("text")) else {
-            continue;
-        };
-        let center = point_to_global(text, 0.0, 0.0).unwrap();
+        let rows = visible_texts(label);
+        assert!(
+            !rows.is_empty(),
+            "relationship label must contain visible text"
+        );
+        let center = block_center(&rows);
         let route = &paths[label.attribute("data-id").unwrap()];
         let distance = route
             .windows(2)
@@ -441,38 +542,37 @@ fn formatted_relationship_rows_center_as_a_block_on_the_route() {
             .descendants()
             .find(|node| has_class(*node, "label") && node.attribute("data-id").is_some())
             .unwrap();
-        let text = label
-            .descendants()
-            .find(|node| node.has_tag_name("text"))
-            .unwrap();
-        let rows: Vec<_> = text.children().filter(Node::is_element).collect();
+        let rows = visible_texts(label);
         assert_eq!(
             rows.len(),
             2,
             "multiline relationship must retain both rows: {source}"
         );
-        let ys: Vec<f64> = rows
+        let centers: Vec<_> = rows
             .iter()
             .map(|row| {
                 assert_eq!(row.attribute("dominant-baseline"), Some("central"));
-                assert_eq!(row.attribute("dy"), Some("0"));
-                row.attribute("y")
-                    .unwrap()
-                    .strip_suffix("em")
-                    .unwrap()
-                    .parse()
-                    .unwrap()
+                assert_eq!(row.attribute("text-anchor"), Some("middle"));
+                text_center(*row)
             })
             .collect();
-        assert!(
-            (ys[0] + ys[1]).abs() < 1e-6,
-            "row block must be centered, rather than anchoring its first baseline"
+        assert_eq!(
+            rows.iter()
+                .map(|row| text_content(*row))
+                .collect::<Vec<_>>(),
+            ["First line", "Second line"]
         );
+        assert!((centers[0].0 - centers[1].0).abs() < 0.1);
+        let line_height: f64 = inline_property(rows[0].attribute("style").unwrap(), "line-height")
+            .unwrap()
+            .trim_end_matches("px")
+            .parse()
+            .unwrap();
         assert!(
-            (ys[1] - ys[0] - 1.1).abs() < 1e-6,
-            "native multiline spacing must survive centering"
+            (centers[1].1 - centers[0].1 - line_height).abs() < 0.1,
+            "multiline spacing must retain the measured line height: {source}; {centers:?}"
         );
-        let center = point_to_global(text, 0.0, 0.0).unwrap();
+        let center = block_center(&rows);
         let route = &paths[label.attribute("data-id").unwrap()];
         let distance = route
             .windows(2)
@@ -578,32 +678,20 @@ fn usecase_text_is_centered_inside_its_ellipse() {
         .children()
         .find(|node| node.has_tag_name("ellipse"))
         .unwrap();
-    let placed = node
-        .descendants()
-        .find(|node| node.has_tag_name("use"))
-        .unwrap();
-    let reference = placed.attribute("href").unwrap().strip_prefix('#').unwrap();
-    let template = doc
-        .descendants()
-        .find(|node| node.attribute("id") == Some(reference))
-        .unwrap();
-    let text = template
-        .descendants()
-        .find(|node| node.has_tag_name("text"))
-        .unwrap();
-    let ellipse_center = point_to_global(ellipse, number(ellipse, "cx", 0.0).unwrap(), 0.0)
-        .unwrap()
-        .0;
-    let text_center = point_to_global(
-        placed,
-        number(text, "x", 0.0).unwrap() + number(placed, "x", 0.0).unwrap(),
-        0.0,
+    let rows = visible_texts(node);
+    assert_eq!(rows.len(), 1);
+    let text = rows[0];
+    let ellipse_center = point_to_global(
+        ellipse,
+        number(ellipse, "cx", 0.0).unwrap(),
+        number(ellipse, "cy", 0.0).unwrap(),
     )
-    .unwrap()
-    .0;
+    .unwrap();
+    let text_center = text_center(text);
     assert!(
-        (ellipse_center - text_center).abs() < 1.0,
-        "usecase text center {text_center} must match ellipse center {ellipse_center}"
+        (ellipse_center.0 - text_center.0).abs() < 1.0
+            && (ellipse_center.1 - text_center.1).abs() < 1.0,
+        "usecase text center {text_center:?} must match ellipse center {ellipse_center:?}"
     );
     let content: String = text
         .descendants()

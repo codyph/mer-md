@@ -1,0 +1,9 @@
+sequenceDiagram
+    participant Requester
+    participant Worker
+    Requester->>Worker: Request
+    Worker-->>Requester: Reply
+    Worker->>Worker: Retry
+    Requester<<->>Worker: Exchange
+    Requester--xWorker: Cancel
+    Worker-)Requester: Notify

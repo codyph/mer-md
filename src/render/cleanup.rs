@@ -18,16 +18,19 @@ pub fn clean(svg: &str) -> Result<String> {
         // Substituted fonts can exceed HTML-label viewport estimates.
         // Allow overflow without changing measured geometry.
         let fallback_viewport = node.has_tag_name("svg")
-            && node.parent_element().is_some_and(|parent| {
-                parent.has_tag_name("g")
-                    && parent
-                        .parent_element()
-                        .is_some_and(|defs| defs.has_tag_name("defs"))
-                    && parent.attribute("id").is_some_and(|id| {
-                        id.strip_prefix(&fallback_prefix)
-                            .is_some_and(|suffix| suffix.parse::<usize>().is_ok())
-                    })
-            });
+            && (node
+                .ancestors()
+                .any(|parent| has_class(parent, "merman-foreignobject-fallback"))
+                || node.parent_element().is_some_and(|parent| {
+                    parent.has_tag_name("g")
+                        && parent
+                            .parent_element()
+                            .is_some_and(|defs| defs.has_tag_name("defs"))
+                        && parent.attribute("id").is_some_and(|id| {
+                            id.strip_prefix(&fallback_prefix)
+                                .is_some_and(|suffix| suffix.parse::<usize>().is_ok())
+                        })
+                }));
         if fallback_viewport {
             if let Some(attribute) = node.attribute_node("overflow") {
                 if attribute.value() != "visible" {
@@ -172,11 +175,9 @@ mod tests {
                 .descendants()
                 .filter(|node| {
                     node.has_tag_name("svg")
-                        && node.parent_element().is_some_and(|parent| {
-                            parent
-                                .attribute("id")
-                                .is_some_and(|id| id.starts_with("mer-md-foreignobject-label-"))
-                        })
+                        && node
+                            .ancestors()
+                            .any(|parent| has_class(parent, "merman-foreignobject-fallback"))
                 })
                 .collect();
             assert!(
