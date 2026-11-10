@@ -1,6 +1,7 @@
 /target/
 /.tools/
 /artifacts/
+/comparison/
 /THIRD_PARTY_LICENSES.txt
 .DS_Store
 Thumbs.db
