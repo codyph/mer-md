@@ -71,7 +71,7 @@ fn svg_has_text(svg: &str, expected: &str) -> bool {
 
 fn identified_source(id: &str, label: &str) -> String {
     format!(
-        "<!-- portable-mermaid:id {id} -->\n{}",
+        "<!-- mer-md:id {id} -->\n{}",
         FENCE.replace("Original", label)
     )
 }
@@ -157,7 +157,12 @@ fn single_file_render_is_idempotent_and_restore_edit_reuses_the_svg() {
     write(root, "README.md", &original);
     write(root, "untouched.markdown", FENCE);
 
-    assert_exit(&run(root, &["README.md"]), 0);
+    let first = run(root, &["README.md"]);
+    assert_exit(&first, 0);
+    let summary = String::from_utf8_lossy(&first.stdout);
+    assert!(summary.contains("Finished in "));
+    assert!(summary.contains("Markdown: 1 scanned, 1 updated"));
+    assert!(summary.contains("Diagrams: 1 total, 1 rendered, 0 cached"));
     assert_eq!(read(root, "untouched.markdown"), FENCE);
     let rendered = read(root, "README.md");
     assert!(rendered.contains("<p align=\"center\">"));
@@ -175,11 +180,26 @@ fn single_file_render_is_idempotent_and_restore_edit_reuses_the_svg() {
     assert_eq!(svg_paths(root), paths);
     assert_eq!(fs::read(&paths[0]).unwrap(), first_svg);
     assert!(String::from_utf8_lossy(&repeated.stdout).contains("1 cached"));
+    let summary = String::from_utf8_lossy(&repeated.stdout);
+    assert!(summary.contains("Markdown: 1 scanned, 0 updated"));
+    assert!(summary.contains("Diagrams: 1 total, 0 rendered, 1 cached"));
 
-    assert_exit(&run(root, &["--restore", "README.md"]), 0);
+    let restored_output = run(root, &["--restore", "README.md"]);
+    assert_exit(&restored_output, 0);
+    let summary = String::from_utf8_lossy(&restored_output.stdout);
+    assert!(summary.contains("Markdown: 1 scanned, 1 restored"));
+    assert!(summary.contains("Diagrams: 1 restored"));
     let restored = read(root, "README.md");
     assert!(restored.contains(FENCE));
     assert!(!restored.contains("alt=\"Mermaid diagram\""));
+    let repeated_restore = run(root, &["--restore", "README.md"]);
+    assert_exit(&repeated_restore, 0);
+    let summary = String::from_utf8_lossy(&repeated_restore.stdout);
+    assert!(summary.contains("Markdown: 1 scanned, 0 restored"));
+    assert!(summary.contains("Diagrams: 0 restored"));
+    assert_eq!(read(root, "README.md"), restored);
+    assert_eq!(svg_paths(root), paths);
+    assert_eq!(fs::read(&paths[0]).unwrap(), first_svg);
     let edited = restored.replace("A[Original]", "A[Changed]");
     write(root, "README.md", &edited);
     assert_exit(&run(root, &["README.md"]), 0);
@@ -209,6 +229,47 @@ fn unknown_option_leaves_project_unchanged() {
     assert_eq!(read(root, "README.md"), markdown);
     assert_eq!(svg_paths(root), paths);
     assert_eq!(fs::read(&paths[0]).unwrap(), svg);
+}
+
+#[test]
+fn stored_comment_blocks_update_without_changing_image_paths() {
+    let temp = fixture();
+    let root = temp.path();
+    write(root, "README.md", FENCE);
+    assert_exit(&run(root, &["README.md"]), 0);
+    let paths = svg_paths(root);
+    let stored = read(root, "README.md")
+        .replace("<!-- mer-md:", "<!-- portable-mermaid:")
+        .replace("A[Original]", "A[Changed]");
+    write(root, "README.md", &stored);
+    let svg = fs::read_to_string(&paths[0]).unwrap().replacen(
+        "<!-- mer-md:cache",
+        "<!-- portable-mermaid:cache",
+        1,
+    );
+    fs::write(&paths[0], svg).unwrap();
+
+    assert_exit(&run(root, &["README.md"]), 0);
+    let updated = read(root, "README.md");
+    assert!(updated.starts_with("<!-- mer-md:begin id="));
+    assert!(!updated.contains("<!-- portable-mermaid:"));
+    assert_eq!(updated.matches("alt=\"Mermaid diagram\"").count(), 1);
+    assert_eq!(svg_paths(root), paths);
+    let svg = fs::read_to_string(&paths[0]).unwrap();
+    assert!(svg.starts_with("<!-- mer-md:cache "));
+    assert!(svg_has_text(&svg, "Changed"));
+
+    write(
+        root,
+        "README.md",
+        &updated.replace("<!-- mer-md:", "<!-- portable-mermaid:"),
+    );
+    assert_exit(&run(root, &["README.md", "--restore"]), 0);
+    let restored = read(root, "README.md");
+    assert!(restored.starts_with("<!-- mer-md:id "));
+    assert!(!restored.contains("<!-- portable-mermaid:"));
+    assert!(restored.ends_with(&FENCE.replace("Original", "Changed")));
+    assert_eq!(fs::read_to_string(&paths[0]).unwrap(), svg);
 }
 
 #[test]
@@ -246,7 +307,7 @@ fn editing_readable_source_and_adding_raw_arrows_updates_the_same_svg_without_re
     assert_exit(&run(root, &["README.md"]), 0);
     let paths = svg_paths(root);
     let rendered = read(root, "README.md");
-    assert!(rendered.contains("<!-- portable-mermaid:source\n```mermaid\nflowchart LR\n"));
+    assert!(rendered.contains("<!-- mer-md:source\n```mermaid\nflowchart LR\n"));
     assert!(rendered.contains("A[Original] --&gt; B[Finish]"));
 
     // Raw arrows close HTML comments; rerendering must still read the source.

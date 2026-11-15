@@ -8,12 +8,12 @@ use anyhow::{Context, Result, bail, ensure};
 use pulldown_cmark::{CodeBlockKind, Event, Parser, Tag, TagEnd};
 use sha2::{Digest, Sha256};
 
-const BEGIN: &str = "<!-- portable-mermaid:begin id=";
-const END: &str = "<!-- portable-mermaid:end -->";
-const SOURCE: &str = "<!-- portable-mermaid:source";
-const SOURCE_NO_FINAL_NEWLINE: &str = "<!-- portable-mermaid:source no-final-newline";
-const ID: &str = "<!-- portable-mermaid:id ";
-const RESERVED: &str = "<!-- portable-mermaid:";
+const BEGIN: &str = "<!-- mer-md:begin id=";
+const END: &str = "<!-- mer-md:end -->";
+const SOURCE: &str = "<!-- mer-md:source";
+const SOURCE_NO_FINAL_NEWLINE: &str = "<!-- mer-md:source no-final-newline";
+const ID: &str = "<!-- mer-md:id ";
+const RESERVED: &str = "<!-- mer-md:";
 
 #[derive(Clone, Debug)]
 pub struct Diagram {
@@ -101,7 +101,8 @@ fn discover_content(markdown: &str, document_key: &str) -> Result<Vec<Diagram>> 
         }
 
         let trimmed = text.trim_start_matches(' ');
-        if !trimmed.starts_with(RESERVED) {
+        let marker = canonical_marker(trimmed.trim_end_matches([' ', '\t']));
+        if !marker.starts_with(RESERVED) {
             continue;
         }
         // A marker in a code example is ordinary code, never a command.
@@ -117,9 +118,7 @@ fn discover_content(markdown: &str, document_key: &str) -> Result<Vec<Diagram>> 
             text.len() - trimmed.len() <= 3,
             "diagram markers must be at the document's top level"
         );
-        let marker = trimmed.trim_end_matches([' ', '\t']);
-
-        if let Some(id) = marker_id(marker, BEGIN)? {
+        if let Some(id) = marker_id(&marker, BEGIN)? {
             ensure!(current.is_none(), "nested managed diagrams are invalid");
             current = Some(Managed {
                 id,
@@ -129,7 +128,7 @@ fn discover_content(markdown: &str, document_key: &str) -> Result<Vec<Diagram>> 
                 source_end: None,
                 original_fence: None,
             });
-        } else if matches!(marker, SOURCE | SOURCE_NO_FINAL_NEWLINE) {
+        } else if matches!(marker.as_ref(), SOURCE | SOURCE_NO_FINAL_NEWLINE) {
             let block = current
                 .as_mut()
                 .context("source marker outside a managed diagram")?;
@@ -145,7 +144,7 @@ fn discover_content(markdown: &str, document_key: &str) -> Result<Vec<Diagram>> 
             block.source_start = Some(line_span.start);
             block.original_fence = Some(comment.original_fence.clone());
             block.source_end = Some(comment.end);
-        } else if marker == END {
+        } else if marker.as_ref() == END {
             let block = current
                 .take()
                 .context("end marker without a diagram begin marker")?;
@@ -172,7 +171,7 @@ fn discover_content(markdown: &str, document_key: &str) -> Result<Vec<Diagram>> 
                 span: block.start..line_span.end,
                 managed: true,
             });
-        } else if let Some(id) = marker_id(marker, ID)? {
+        } else if let Some(id) = marker_id(&marker, ID)? {
             ensure!(
                 current.is_none(),
                 "identity marker inside a managed block is invalid"
@@ -351,8 +350,9 @@ fn mask_source_comments(markdown: &str) -> Result<(String, Vec<SourceComment>)> 
             let start = offset;
             offset += line.len();
             let text = line.trim_end_matches(['\r', '\n']);
-            let marker = text.trim_start_matches(' ').trim_end_matches([' ', '\t']);
-            if !matches!(marker, SOURCE | SOURCE_NO_FINAL_NEWLINE)
+            let marker =
+                canonical_marker(text.trim_start_matches(' ').trim_end_matches([' ', '\t']));
+            if !matches!(marker.as_ref(), SOURCE | SOURCE_NO_FINAL_NEWLINE)
                 || sources.iter().any(|comment| comment.start == start)
             {
                 continue;
@@ -368,7 +368,7 @@ fn mask_source_comments(markdown: &str) -> Result<(String, Vec<SourceComment>)> 
                 continue;
             }
             // Reparse after masking sources that hide later comments.
-            let comment = read_source_comment(markdown, start, offset, marker)?;
+            let comment = read_source_comment(markdown, start, offset, &marker)?;
             found.push(comment);
         }
         if found.is_empty() {
@@ -422,7 +422,7 @@ fn read_source_comment(
             });
         }
         ensure!(
-            !text.trim_start_matches(' ').starts_with(RESERVED),
+            !canonical_marker(text.trim_start_matches(' ')).starts_with(RESERVED),
             "readable source was interrupted by a managed marker before its comment closed"
         );
         ensure!(
@@ -469,6 +469,13 @@ pub fn restore_document(markdown: &str, diagrams: &[Diagram]) -> Result<String> 
         })
         .collect();
     apply_replacements(markdown, replacements)
+}
+
+fn canonical_marker(marker: &str) -> Cow<'_, str> {
+    match marker.strip_prefix("<!-- portable-mermaid:") {
+        Some(suffix) => Cow::Owned(format!("{RESERVED}{suffix}")),
+        None => Cow::Borrowed(marker),
+    }
 }
 
 fn marker_id(marker: &str, prefix: &str) -> Result<Option<String>> {

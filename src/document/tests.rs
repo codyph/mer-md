@@ -21,7 +21,7 @@ fn arrows_and_html_labels_survive_render_restore() {
     assert_eq!(diagrams[0].original_fence, fence);
     assert!(diagrams[0].source.contains("-->"));
     let restored = restore_document(&rendered, &diagrams).unwrap();
-    assert!(restored.starts_with("# Before\n\n<!-- portable-mermaid:id "));
+    assert!(restored.starts_with("# Before\n\n<!-- mer-md:id "));
     assert!(restored.ends_with(&format!("{fence}\nAfter.\n")));
 }
 
@@ -29,6 +29,41 @@ fn arrows_and_html_labels_survive_render_restore() {
 fn rerender_is_byte_for_byte_idempotent() {
     let rendered = render("```mermaid\nflowchart LR\nA --> B\n```\n");
     assert_eq!(rendered, render(&rendered));
+}
+
+#[test]
+fn stored_comments_preserve_source_and_identity() {
+    for fence in [
+        "```mermaid\nflowchart LR\nA --> B\n```\n",
+        "```mermaid\r\nflowchart LR\r\nA --> B\r\n```\r\n",
+        "```mermaid\nflowchart LR\nA --> B\n```",
+    ] {
+        let current = render(fence);
+        let stored = current.replace(RESERVED, "<!-- portable-mermaid:");
+        let diagrams = discover(&stored, "README.md").unwrap();
+        assert_eq!(diagrams.len(), 1);
+        assert_eq!(
+            diagrams[0].id,
+            discover(&current, "README.md").unwrap()[0].id
+        );
+        assert_eq!(diagrams[0].original_fence, fence);
+        assert_eq!(render(&stored), current);
+        let restored = restore_document(&stored, &diagrams).unwrap();
+        assert!(restored.starts_with(ID));
+        assert!(restored.ends_with(fence));
+        assert!(!restored.contains("<!-- portable-mermaid:"));
+    }
+}
+
+#[test]
+fn identity_comments_reuse_the_same_svg_name() {
+    for prefix in [ID, "<!-- portable-mermaid:id "] {
+        let source = format!("{prefix}existing -->\n```mermaid\nflowchart LR\nA --> B\n```\n");
+        let rendered = render(&source);
+        assert!(rendered.starts_with(&format!("{BEGIN}existing -->")));
+        assert!(rendered.contains("src=\"docs/diagrams/existing.svg\""));
+        assert_eq!(discover(&rendered, "README.md").unwrap().len(), 1);
+    }
 }
 
 #[test]
@@ -126,6 +161,8 @@ fn code_examples_and_other_languages_are_ignored() {
     let diagrams = discover(input, "README.md").unwrap();
     assert_eq!(diagrams.len(), 1);
     assert!(diagrams[0].source.contains("graph TD"));
+    let example = input.split("```MERMAID").next().unwrap();
+    assert!(render(input).starts_with(example));
 }
 
 #[test]
@@ -142,9 +179,9 @@ fn two_fences_have_independent_ids_and_preserve_prose() {
 
 #[test]
 fn malformed_and_duplicate_owned_regions_fail_safely() {
-    assert!(discover("<!-- portable-mermaid:begin id=x -->\n", "README.md").is_err());
-    assert!(discover("<!-- portable-mermaid:end -->\n", "README.md").is_err());
-    assert!(discover("<!-- portable-mermaid:id x -->\ntext\n", "README.md").is_err());
+    assert!(discover("<!-- mer-md:begin id=x -->\n", "README.md").is_err());
+    assert!(discover("<!-- mer-md:end -->\n", "README.md").is_err());
+    assert!(discover("<!-- mer-md:id x -->\ntext\n", "README.md").is_err());
     let rendered = render("```mermaid\ngraph TD\nA-->B\n```\n");
     assert!(discover(&format!("{rendered}\n{rendered}"), "README.md").is_err());
     let corrupted = rendered.replace(SOURCE, &format!("{SOURCE} unexpected"));

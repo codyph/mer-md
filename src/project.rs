@@ -9,6 +9,7 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
 
 struct Change {
     path: PathBuf,
@@ -41,15 +42,30 @@ impl Plan {
 }
 
 pub(crate) fn execute(options: &Options) -> Result<()> {
+    let started = Instant::now();
     let plan = plan(options)?;
     plan.apply()?;
+    let action = if options.restore {
+        "restored"
+    } else {
+        "updated"
+    };
+    println!("Finished in {:.2}s", started.elapsed().as_secs_f64());
     println!(
-        "Updated {} Markdown file(s), {} SVG(s); {} diagram(s), {} cached.",
-        plan.markdown_changes.len(),
-        plan.svg_changes.len(),
-        plan.diagram_count,
-        plan.cached_count
+        "  Markdown: {} scanned, {} {action}",
+        plan.inputs.len(),
+        plan.markdown_changes.len()
     );
+    if options.restore {
+        println!("  Diagrams: {} restored", plan.diagram_count);
+    } else {
+        println!(
+            "  Diagrams: {} total, {} rendered, {} cached",
+            plan.diagram_count,
+            plan.svg_changes.len(),
+            plan.cached_count
+        );
+    }
     Ok(())
 }
 
@@ -98,7 +114,11 @@ fn plan(options: &Options) -> Result<Plan> {
                 display_relative(path, &root)
             )
         })?;
-        diagram_count += diagrams.len();
+        diagram_count += if options.restore {
+            diagrams.iter().filter(|diagram| diagram.managed).count()
+        } else {
+            diagrams.len()
+        };
         let updated = if options.restore {
             document::restore_document(&markdown, &diagrams)?
         } else {
@@ -126,8 +146,7 @@ fn plan(options: &Options) -> Result<Plan> {
                 check_output_file(&svg_path)?;
                 let fingerprint = diagram_fingerprint(diagram);
                 let owner = STANDARD.encode(key.as_bytes());
-                let header =
-                    format!("<!-- portable-mermaid:cache v1 {fingerprint} owner={owner} -->\n");
+                let header = format!("<!-- mer-md:cache v1 {fingerprint} owner={owner} -->\n");
                 let existing = match fs::read_to_string(&svg_path) {
                     Ok(text) => Some(text),
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
@@ -331,7 +350,9 @@ fn diagram_fingerprint(diagram: &Diagram) -> String {
 
 fn verify_svg_ownership(svg: &str, root: &Path, key: &str, id: &str) -> Result<()> {
     let header = svg.lines().next().unwrap_or("");
-    if !header.starts_with("<!-- portable-mermaid:cache v1 ") {
+    if !header.starts_with("<!-- mer-md:cache v1 ")
+        && !header.starts_with("<!-- portable-mermaid:cache v1 ")
+    {
         bail!("refusing to overwrite an SVG not created by this tool");
     }
     let encoded = header

@@ -165,25 +165,21 @@ fn managed_image(slug: &str, markdown: &str) -> (String, String) {
         "{slug}: surrounding prose changed"
     );
     assert_eq!(
-        markdown.matches("<!-- portable-mermaid:source").count(),
+        markdown.matches("<!-- mer-md:source").count(),
         1,
         "{slug}: expected one editable source comment"
     );
     assert!(
-        markdown.contains("<!-- portable-mermaid:source\n```mermaid\n"),
+        markdown.contains("<!-- mer-md:source\n```mermaid\n"),
         "{slug}: Mermaid fence is missing from the source comment"
     );
     let (id, block) = markdown
-        .split_once("<!-- portable-mermaid:begin id=")
+        .split_once("<!-- mer-md:begin id=")
         .unwrap_or_else(|| panic!("{slug}: managed diagram start is missing"))
         .1
         .split_once(" -->")
         .unwrap_or_else(|| panic!("{slug}: diagram identity is missing"));
-    let image_markup = block
-        .split_once("<!-- portable-mermaid:source")
-        .unwrap()
-        .0
-        .trim();
+    let image_markup = block.split_once("<!-- mer-md:source").unwrap().0.trim();
     let image_document = Document::parse(image_markup)
         .unwrap_or_else(|error| panic!("{slug}: invalid image wrapper: {error}"));
     let paragraph = image_document.root_element();
@@ -337,7 +333,7 @@ fn renders_caches_and_restores_all_diagram_families_in_a_project_batch() {
     let repeated = command(root, &["."]);
     assert_success(&repeated, "cached diagram family batch");
     assert!(String::from_utf8_lossy(&repeated.stdout).contains(&format!(
-        "{} diagram(s), {} cached.",
+        "Diagrams: {} total, 0 rendered, {} cached",
         CASES.len(),
         CASES.len()
     )));
@@ -354,7 +350,7 @@ fn renders_caches_and_restores_all_diagram_families_in_a_project_batch() {
     let updated = command(root, &["."]);
     assert_success(&updated, "edited diagram family batch");
     assert!(String::from_utf8_lossy(&updated.stdout).contains(&format!(
-        "{} diagram(s), {} cached.",
+        "Diagrams: {} total, 1 rendered, {} cached",
         CASES.len(),
         CASES.len() - 1
     )));
@@ -391,10 +387,7 @@ fn renders_caches_and_restores_all_diagram_families_in_a_project_batch() {
         let restored = fs::read_to_string(root.join(format!("{slug}.md"))).unwrap();
         let expected = originals[slug].replacen(
             "```mermaid\n",
-            &format!(
-                "<!-- portable-mermaid:id {} -->\n```mermaid\n",
-                identities[slug]
-            ),
+            &format!("<!-- mer-md:id {} -->\n```mermaid\n", identities[slug]),
             1,
         );
         assert_eq!(
@@ -416,7 +409,7 @@ fn renders_caches_and_restores_all_diagram_families_in_a_project_batch() {
     assert_success(&rerendered, "render restored diagram family batch");
     assert!(
         String::from_utf8_lossy(&rerendered.stdout).contains(&format!(
-            "{} diagram(s), {} cached.",
+            "Diagrams: {} total, 0 rendered, {} cached",
             CASES.len(),
             CASES.len()
         ))

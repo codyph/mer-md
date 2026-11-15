@@ -1,6 +1,7 @@
 #![recursion_limit = "256"]
 
 mod cli;
+mod console;
 mod document;
 mod project;
 mod render;
@@ -8,13 +9,15 @@ mod render;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
-    match run() {
+    let exit_code = match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("error: {error:#}");
             ExitCode::from(2)
         }
-    }
+    };
+    console::pause_on_exit();
+    exit_code
 }
 
 fn run() -> anyhow::Result<()> {
