@@ -16,13 +16,13 @@ flowchart TD
     notify --> done([Complete])
 ```
 
-<!-- portable-mermaid:begin id=demo-flowchart -->
+<!-- mer-md:begin id=demo-flowchart -->
 
 <p align="center">
   <img src="docs/diagrams/demo-flowchart.svg" alt="Mermaid diagram" />
 </p>
 
-<!-- portable-mermaid:source
+<!-- mer-md:source
 ```mermaid
 flowchart TD
     request[Receive request] --&gt; validate{Complete details?}
@@ -35,7 +35,7 @@ flowchart TD
     notify --&gt; done([Complete])
 ```
 -->
-<!-- portable-mermaid:end -->
+<!-- mer-md:end -->
 
 ## Sequence
 
@@ -56,13 +56,13 @@ sequenceDiagram
     Note over Portal,Records: Retain an audit trail
 ```
 
-<!-- portable-mermaid:begin id=demo-sequence -->
+<!-- mer-md:begin id=demo-sequence -->
 
 <p align="center">
   <img src="docs/diagrams/demo-sequence.svg" alt="Mermaid diagram" />
 </p>
 
-<!-- portable-mermaid:source
+<!-- mer-md:source
 ```mermaid
 sequenceDiagram
     actor Applicant
@@ -80,7 +80,7 @@ sequenceDiagram
     Note over Portal,Records: Retain an audit trail
 ```
 -->
-<!-- portable-mermaid:end -->
+<!-- mer-md:end -->
 
 ## State
 
@@ -96,13 +96,13 @@ stateDiagram-v2
     Rejected --> [*]: Notify applicant
 ```
 
-<!-- portable-mermaid:begin id=demo-state -->
+<!-- mer-md:begin id=demo-state -->
 
 <p align="center">
   <img src="docs/diagrams/demo-state.svg" alt="Mermaid diagram" />
 </p>
 
-<!-- portable-mermaid:source
+<!-- mer-md:source
 ```mermaid
 stateDiagram-v2
     [*] --&gt; Draft
@@ -115,7 +115,7 @@ stateDiagram-v2
     Rejected --&gt; [*]: Notify applicant
 ```
 -->
-<!-- portable-mermaid:end -->
+<!-- mer-md:end -->
 
 ## Classes
 
@@ -141,13 +141,13 @@ classDiagram
     Application --> AuditEntry : preserves history
 ```
 
-<!-- portable-mermaid:begin id=demo-class -->
+<!-- mer-md:begin id=demo-class -->
 
 <p align="center">
   <img src="docs/diagrams/demo-class.svg" alt="Mermaid diagram" />
 </p>
 
-<!-- portable-mermaid:source
+<!-- mer-md:source
 ```mermaid
 classDiagram
     class Application {
@@ -170,7 +170,7 @@ classDiagram
     Application --&gt; AuditEntry : preserves history
 ```
 -->
-<!-- portable-mermaid:end -->
+<!-- mer-md:end -->
 
 ## Entity relationships
 
@@ -198,13 +198,13 @@ erDiagram
     }
 ```
 
-<!-- portable-mermaid:begin id=demo-er -->
+<!-- mer-md:begin id=demo-er -->
 
 <p align="center">
   <img src="docs/diagrams/demo-er.svg" alt="Mermaid diagram" />
 </p>
 
-<!-- portable-mermaid:source
+<!-- mer-md:source
 ```mermaid
 erDiagram
     APPLICANT ||--o{ APPLICATION : submits
@@ -229,7 +229,7 @@ erDiagram
     }
 ```
 -->
-<!-- portable-mermaid:end -->
+<!-- mer-md:end -->
 
 ## Pie chart
 
@@ -241,13 +241,13 @@ pie showData
     "Rejected" : 15
 ```
 
-<!-- portable-mermaid:begin id=demo-pie -->
+<!-- mer-md:begin id=demo-pie -->
 
 <p align="center">
   <img src="docs/diagrams/demo-pie.svg" alt="Mermaid diagram" />
 </p>
 
-<!-- portable-mermaid:source
+<!-- mer-md:source
 ```mermaid
 pie showData
     title Review outcomes
@@ -256,4 +256,4 @@ pie showData
     "Rejected" : 15
 ```
 -->
-<!-- portable-mermaid:end -->
+<!-- mer-md:end -->

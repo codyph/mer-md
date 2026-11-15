@@ -2,70 +2,59 @@
 
 Turn Mermaid in Markdown into SVGs. Portable, editable, and fully offline.
 
-No Node.js, browser, or rendering service required. [See the demo](demo/README.md).
+[Download](https://github.com/codyph/mer-md/releases) · [See the demo](demo/README.md)
 
 ## Usage
 
-Download and extract the archive for your platform from [Releases](https://github.com/codyph/mer-md/releases), then run the executable against a project:
+Extract the download for your platform, then run:
 
 ```powershell
-.\mer-md.exe .
-.\mer-md.exe ../path/to/project
-.\mer-md.exe README.md
+.\mer-md.exe .                    # Current project
+.\mer-md.exe ../path/to/project   # Another project
+.\mer-md.exe README.md            # One Markdown file
 ```
 
-On Linux and macOS:
-
-```sh
-chmod +x mer-md
-./mer-md .
-```
-
-With no path, `mer-md` uses the current directory. Directories are searched recursively for `.md` and `.markdown` files.
-
-Each Mermaid block becomes a centred SVG image. The selected directory contains the generated `docs/diagrams/`; selecting a single file uses its parent directory. Image paths are relative to each Markdown file.
-
-Edit the Mermaid code preserved in the adjacent HTML comment and run the command again. The same SVG is updated without adding another image. Comment delimiters are escaped as `--&gt;` and decoded when rendering; ordinary Mermaid arrows can be typed when editing.
-
-To restore Mermaid fences:
-
-```sh
-mer-md . --restore
-```
-
-SVGs remain available for reuse. Commit the Markdown and generated SVGs together.
-
-```text
-mer-md [PATH] [--restore]
-
-PATH        Markdown file or project directory (default: .)
---restore   Restore Mermaid code blocks
--h, --help  Show help
-```
+On Linux and macOS, use `./mer-md` instead. With no path, the current directory is used. Directories are searched recursively for `.md` and `.markdown` files.
 
 ## Output
 
-- Transparent SVGs with automatic light and dark colours.
-- Centred images at their natural size, scaled down by responsive viewers.
-- Readable source comments, stable filenames, and cached rendering.
+Running `mer-md.exe project` creates SVGs under `project/docs/diagrams/`:
 
-Image centring requires HTML support, as provided by GitHub. Bitbucket Data Center's default renderer [escapes HTML](https://confluence.atlassian.com/bitbucketserver/markdown-syntax-guide-776639995.html). Automatic colours follow the browser's preference; colours explicitly set in Mermaid stay fixed. Flowchart and state labels on opaque custom fills use a contrasting colour unless a text colour is explicitly set.
+```text
+project/
+├── README.md
+└── docs/
+    ├── guide.markdown
+    └── diagrams/
+        ├── d-a1b2c3d4e5f6.svg
+        └── d-b2c3d4e5f6a1.svg
+```
 
-Mermaid fences must be outside lists and blockquotes. Rendering uses [Merman](https://github.com/Latias94/merman); layouts and syntax support can differ from Mermaid.js.
+Each Mermaid block becomes a centred image with a relative link. SVGs have transparent backgrounds and automatic light/dark colours. Selecting one file puts `docs/diagrams/` beside that file.
 
-## Platforms
+Edit the Mermaid code preserved in its adjacent `mer-md:source` HTML comment, then run again. The same SVG is updated without adding another image. Arrows escaped as `--&gt;` can be edited using ordinary `-->` syntax.
 
-| Platform | Archive |
-| --- | --- |
-| Windows x86_64 | `mer-md-windows-x86_64.zip` |
-| Linux x86_64 | `mer-md-linux-x86_64.tar.gz` |
-| macOS Apple Silicon | `mer-md-macos-aarch64.tar.gz` |
-| macOS Intel | `mer-md-macos-x86_64.tar.gz` |
+To restore Mermaid code blocks:
 
-Linux builds statically link musl and require a compatible x86_64 CPU and Linux kernel.
-Fonts used for layout are embedded in the executable on every platform.
+```powershell
+.\mer-md.exe . --restore
+```
 
-## Build from source
+SVGs remain available for reuse. Commit the Markdown and SVGs together.
+
+Each run reports files scanned, files updated, diagrams rendered or cached, and elapsed time. On Windows, a terminal opened for the executable closes three seconds after completion.
+
+## Compatibility
+
+- Windows x86_64, Linux x86_64, and macOS Intel/Apple Silicon.
+- No Node.js, browser, or rendering service required. Layout fonts are embedded.
+- Linux builds statically link musl; a compatible x86_64 CPU and Linux kernel are required.
+
+Rendering uses [Merman](https://github.com/Latias94/merman); layouts and syntax support can differ from Mermaid.js. Mermaid fences must be outside lists and blockquotes. Explicit Mermaid colours stay fixed.
+
+Image centring requires HTML support, as provided by GitHub. Bitbucket Data Center's default renderer [escapes HTML](https://confluence.atlassian.com/bitbucketserver/markdown-syntax-guide-776639995.html).
+
+## Build
 
 Requires Rust 1.95+ and platform build tools.
 
