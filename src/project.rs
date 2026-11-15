@@ -409,18 +409,19 @@ fn verify_svg_ownership(svg: &str, root: &Path, key: &str, id: &str) -> Result<(
 }
 
 fn same_file(left: &Path, right: &Path) -> Result<bool> {
-    if fs::canonicalize(left)? == fs::canonicalize(right)? {
-        return Ok(true);
-    }
+    let same_path = fs::canonicalize(left)? == fs::canonicalize(right)?;
     #[cfg(unix)]
     {
+        if same_path {
+            return Ok(true);
+        }
         use std::os::unix::fs::MetadataExt;
         let left = fs::metadata(left)?;
         let right = fs::metadata(right)?;
         Ok(left.dev() == right.dev() && left.ino() == right.ino())
     }
     #[cfg(not(unix))]
-    Ok(false)
+    Ok(same_path)
 }
 
 fn verify_unchanged(path: &Path, original: Option<&[u8]>) -> Result<()> {
